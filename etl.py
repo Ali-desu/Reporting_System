@@ -15,10 +15,11 @@ load_dotenv()
 
 
 def _db_config() -> dict:
-    """Read DB config from Streamlit secrets (cloud) or .env (local)."""
+    """Read DB config from Streamlit secrets (cloud) or .env (local).
+    Called lazily at connection time, not at import time.
+    """
     try:
         import streamlit as st
-        # Support both [database] and [connections.mysql] secret formats
         if "database" in st.secrets:
             s = st.secrets["database"]
         else:
@@ -35,24 +36,19 @@ def _db_config() -> dict:
         )
 
 
-_cfg = _db_config()
-DB_HOST     = _cfg["host"]
-DB_PORT     = _cfg["port"]
-DB_NAME     = _cfg["name"]
-DB_USER     = _cfg["user"]
-DB_PASSWORD = _cfg["password"]
-
-_is_local   = DB_HOST == "localhost"
-_BASE_URL   = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
-
 def get_engine():
-    if _is_local:
-        return create_engine(_BASE_URL, connect_args={"ssl_disabled": True})
+    """Build a fresh engine each call (config is read lazily)."""
+    cfg = _db_config()
+    url = (
+        f"mysql+pymysql://{cfg['user']}:{cfg['password']}"
+        f"@{cfg['host']}:{cfg['port']}/{cfg['name']}"
+    )
+    if cfg["host"] == "localhost":
+        return create_engine(url, connect_args={"ssl_disabled": True})
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    return create_engine(_BASE_URL, connect_args={"ssl": ctx})
+    return create_engine(url, connect_args={"ssl": ctx})
 
 # Columns we care about: original name → DB column name
 COLUMNS_MAP = {
