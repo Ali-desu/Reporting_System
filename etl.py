@@ -45,7 +45,7 @@ def get_engine():
     )
     if cfg["host"] == "localhost":
         return create_engine(url, connect_args={"ssl_disabled": True})
-    ctx = ssl.create_default_context()
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return create_engine(url, connect_args={"ssl": ctx})
