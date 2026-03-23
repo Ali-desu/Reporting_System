@@ -14,41 +14,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def _db_config() -> dict:
-    """Read DB config from Streamlit secrets (cloud) or .env (local).
-    Called lazily at connection time, not at import time.
-    """
-    try:
-        import streamlit as st
-        if "database" in st.secrets:
-            s = st.secrets["database"]
-        else:
-            s = st.secrets["connections"]["mysql"]
-        return dict(host=s["host"], port=int(s["port"]),
-                    name=s["name"], user=s["user"], password=s["password"])
-    except Exception:
-        return dict(
-            host=os.getenv("DB_HOST", "localhost"),
-            port=int(os.getenv("DB_PORT", "4306")),
-            name=os.getenv("DB_NAME", "mydb"),
-            user=os.getenv("DB_USER", "user"),
-            password=os.getenv("DB_PASSWORD", "userpassword"),
-        )
-
-
-def get_engine():
-    """Build a fresh engine each call (config is read lazily)."""
-    cfg = _db_config()
-    url = (
-        f"mysql+pymysql://{cfg['user']}:{cfg['password']}"
-        f"@{cfg['host']}:{cfg['port']}/{cfg['name']}"
-    )
-    if cfg["host"] == "localhost":
+def build_engine(host: str, port: int, name: str, user: str, password: str):
+    """Create a SQLAlchemy engine from explicit credentials."""
+    url = f"mysql+pymysql://{user}:{password}@{host}:{port}/{name}"
+    if host == "localhost":
         return create_engine(url, connect_args={"ssl_disabled": True})
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return create_engine(url, connect_args={"ssl": ctx})
+
+
+def get_engine():
+    """CLI use only — reads credentials from .env."""
+    return build_engine(
+        host=os.getenv("DB_HOST", "localhost"),
+        port=int(os.getenv("DB_PORT", "4306")),
+        name=os.getenv("DB_NAME", "mydb"),
+        user=os.getenv("DB_USER", "user"),
+        password=os.getenv("DB_PASSWORD", "userpassword"),
+    )
 
 # Columns we care about: original name → DB column name
 COLUMNS_MAP = {

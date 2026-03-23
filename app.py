@@ -14,7 +14,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text, inspect
 
-from etl import clean_data, upsert, initial_load, get_engine
+from etl import clean_data, upsert, initial_load, build_engine, get_engine
 
 load_dotenv()
 
@@ -118,7 +118,12 @@ CHART_THEME = dict(
 
 @st.cache_resource
 def _engine():
-    return get_engine()
+    try:
+        s = st.secrets["database"]
+        return build_engine(s["host"], int(s["port"]), s["name"], s["user"], s["password"])
+    except KeyError:
+        # Local dev fallback — reads from .env
+        return get_engine()
 
 
 def _table_exists(engine) -> bool:
@@ -749,7 +754,10 @@ with tab_burndown:
     # Story points: fall back to 1 per issue if missing
     use_points = burn_metric == "Story Points" and "story_points" in df_sprint.columns
     if use_points:
-        df_sprint["_weight"] = pd.to_numeric(df_sprint["story_points"], errors="coerce").fillna(1)
+        df_sprint["_weight"] = pd.to_numeric(df_sprint["story_points"], errors="coerce").fillna(0)
+        n_unpointed = (df_sprint["_weight"] == 0).sum()
+        if n_unpointed > 0:
+            st.caption(f"⚠️ {n_unpointed} issue(s) have no story points and contribute 0 to the burn.")
     else:
         df_sprint["_weight"] = 1.0
 
