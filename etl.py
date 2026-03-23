@@ -3,6 +3,7 @@ ETL module: read Extract.xlsx → clean → load into MySQL `issues` table.
 Run standalone:  python etl.py [path/to/Extract.xlsx]
 """
 import re
+import ssl
 import sys
 import os
 
@@ -17,7 +18,11 @@ def _db_config() -> dict:
     """Read DB config from Streamlit secrets (cloud) or .env (local)."""
     try:
         import streamlit as st
-        s = st.secrets["database"]
+        # Support both [database] and [connections.mysql] secret formats
+        if "database" in st.secrets:
+            s = st.secrets["database"]
+        else:
+            s = st.secrets["connections"]["mysql"]
         return dict(host=s["host"], port=int(s["port"]),
                     name=s["name"], user=s["user"], password=s["password"])
     except Exception:
@@ -37,12 +42,17 @@ DB_NAME     = _cfg["name"]
 DB_USER     = _cfg["user"]
 DB_PASSWORD = _cfg["password"]
 
-_is_local = DB_HOST == "localhost"
-DATABASE_URL = (
-    f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}"
-    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    + ("?ssl_disabled=true" if _is_local else "?ssl=true&ssl_verify_cert=false")
-)
+_is_local   = DB_HOST == "localhost"
+_BASE_URL   = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+
+def get_engine():
+    if _is_local:
+        return create_engine(_BASE_URL, connect_args={"ssl_disabled": True})
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return create_engine(_BASE_URL, connect_args={"ssl": ctx})
 
 # Columns we care about: original name → DB column name
 COLUMNS_MAP = {
@@ -194,8 +204,6 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 # DB helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-def get_engine():
-    return create_engine(DATABASE_URL)
 
 
 def initial_load(df: pd.DataFrame, engine) -> int:
