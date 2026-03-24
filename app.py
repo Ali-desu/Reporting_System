@@ -23,92 +23,180 @@ load_dotenv()
 # ──────────────────────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Issue Tracking Dashboard",
-    page_icon="📊",
+    page_title="DXC — Service Desk Analytics",
+    page_icon="assets/favicon.png" if os.path.exists("assets/favicon.png") else None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.markdown("""
+# ── DXC colour tokens ──────────────────────────────────────────────────────────
+DXC_PURPLE      = "#6D2077"
+DXC_PURPLE_LITE = "#9B26AF"
+DXC_PURPLE_DIM  = "#3D1142"
+DXC_BLACK       = "#0D0D0D"
+DXC_SURFACE     = "#161616"
+DXC_SURFACE2    = "#1F1F1F"
+DXC_BORDER      = "#2E2E2E"
+DXC_GREY        = "#6D7278"
+DXC_GREY_LIGHT  = "#A0A4A8"
+DXC_TEXT        = "#E8E8E8"
+DXC_TEXT_DIM    = "#8A8A8A"
+DXC_WHITE       = "#FFFFFF"
+
+st.markdown(f"""
 <style>
-/* ── Card ── */
-.kpi-card {
-    background: linear-gradient(135deg, #1a2f4a 0%, #0f1e30 100%);
-    border: 1px solid #2a4a6e;
-    border-radius: 14px;
-    padding: 22px 16px 18px 16px;
+/* ── Base ── */
+html, body, [data-testid="stAppViewContainer"] {{
+    background-color: {DXC_BLACK};
+    color: {DXC_TEXT};
+    font-family: 'Segoe UI', sans-serif;
+}}
+[data-testid="stSidebar"] {{
+    background-color: {DXC_SURFACE};
+    border-right: 1px solid {DXC_BORDER};
+}}
+[data-testid="stSidebar"] * {{ color: {DXC_TEXT} !important; }}
+[data-testid="stHeader"] {{ background: transparent; }}
+
+/* ── KPI card ── */
+.kpi-card {{
+    background-color: {DXC_SURFACE2};
+    border: 1px solid {DXC_BORDER};
+    border-top: 3px solid {DXC_PURPLE};
+    border-radius: 4px;
+    padding: 20px 16px 16px 16px;
     text-align: center;
     margin-bottom: 4px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-}
-.kpi-value {
-    font-size: 2.4rem;
+}}
+.kpi-value {{
+    font-size: 2.2rem;
     font-weight: 700;
-    margin: 0 0 4px 0;
+    margin: 0 0 6px 0;
     line-height: 1;
-}
-.kpi-label {
-    font-size: 0.72rem;
-    color: #8ab4d8;
+    color: {DXC_WHITE};
+}}
+.kpi-label {{
+    font-size: 0.68rem;
+    color: {DXC_GREY_LIGHT};
     text-transform: uppercase;
-    letter-spacing: 1.2px;
+    letter-spacing: 1.4px;
     margin: 0;
-}
-.kpi-sub {
-    font-size: 0.75rem;
-    color: #607d8b;
+}}
+.kpi-sub {{
+    font-size: 0.72rem;
+    color: {DXC_GREY};
     margin-top: 6px;
-}
+}}
 
 /* ── Section title ── */
-.sec-title {
-    font-size: 1.05rem;
+.sec-title {{
+    font-size: 0.95rem;
     font-weight: 600;
-    color: #cfd8dc;
-    border-left: 3px solid #1e88e5;
+    color: {DXC_TEXT};
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    border-left: 3px solid {DXC_PURPLE};
     padding-left: 10px;
-    margin: 24px 0 10px 0;
-}
+    margin: 28px 0 12px 0;
+}}
+
+/* ── Divider ── */
+hr {{ border-color: {DXC_BORDER} !important; }}
 
 /* ── Tabs ── */
-.stTabs [data-baseweb="tab-list"] { gap: 6px; }
-.stTabs [data-baseweb="tab"] {
-    background: #1a2f4a;
-    border-radius: 8px 8px 0 0;
-    padding: 8px 18px;
-    color: #8ab4d8;
-    font-size: 0.88rem;
-}
-.stTabs [aria-selected="true"] {
-    background: #1e88e5 !important;
-    color: #fff !important;
-}
+.stTabs [data-baseweb="tab-list"] {{
+    gap: 2px;
+    background-color: {DXC_SURFACE};
+    border-bottom: 1px solid {DXC_BORDER};
+    padding: 0 4px;
+}}
+.stTabs [data-baseweb="tab"] {{
+    background: transparent;
+    border-radius: 0;
+    padding: 10px 20px;
+    color: {DXC_GREY_LIGHT};
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-bottom: 2px solid transparent;
+}}
+.stTabs [aria-selected="true"] {{
+    background: transparent !important;
+    color: {DXC_WHITE} !important;
+    border-bottom: 2px solid {DXC_PURPLE} !important;
+}}
 
-/* ── Upload zone ── */
-.upload-hint {
-    background: #0d1b2a;
-    border: 2px dashed #2a4a6e;
-    border-radius: 12px;
-    padding: 28px;
-    text-align: center;
-    color: #607d8b;
-    font-size: 0.9rem;
-}
+/* ── Inputs ── */
+[data-testid="stSelectbox"] > div,
+[data-testid="stMultiSelect"] > div,
+[data-testid="stDateInput"] > div {{
+    background-color: {DXC_SURFACE2} !important;
+    border-color: {DXC_BORDER} !important;
+    border-radius: 4px !important;
+}}
+.stButton > button {{
+    background-color: {DXC_PURPLE} !important;
+    color: {DXC_WHITE} !important;
+    border: none !important;
+    border-radius: 4px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px;
+}}
+.stButton > button:hover {{
+    background-color: {DXC_PURPLE_LITE} !important;
+}}
+
+/* ── Expander ── */
+[data-testid="stExpander"] {{
+    border: 1px solid {DXC_BORDER} !important;
+    border-radius: 4px !important;
+    background-color: {DXC_SURFACE2} !important;
+}}
+
+/* ── Dataframe ── */
+[data-testid="stDataFrame"] {{
+    border: 1px solid {DXC_BORDER};
+    border-radius: 4px;
+}}
+
+/* ── Page title ── */
+.page-title {{
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: {DXC_WHITE};
+    letter-spacing: 0.5px;
+    margin-bottom: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid {DXC_BORDER};
+}}
+.page-subtitle {{
+    font-size: 0.8rem;
+    color: {DXC_GREY};
+    margin-top: 4px;
+    letter-spacing: 0.3px;
+}}
 </style>
 """, unsafe_allow_html=True)
 
 PRIORITY_COLORS = {
-    "Critical": "#e53935",
-    "High":     "#fb8c00",
-    "Medium":   "#1e88e5",
-    "Low":      "#43a047",
+    "Critical": "#C62828",
+    "High":     "#E65100",
+    "Medium":   "#6D2077",
+    "Low":      "#4A4A4A",
 }
+
+DXC_PALETTE = [DXC_PURPLE, "#9B26AF", "#B04FC0", "#4A1557",
+               "#6D7278", "#A0A4A8", "#3D3D3D", "#D0D0D0"]
 
 CHART_THEME = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="#cfd8dc", size=12),
+    font=dict(color=DXC_TEXT, size=11, family="Segoe UI, sans-serif"),
     margin=dict(t=10, b=10, l=10, r=10),
+    xaxis=dict(gridcolor=DXC_BORDER, linecolor=DXC_BORDER, zerolinecolor=DXC_BORDER),
+    yaxis=dict(gridcolor=DXC_BORDER, linecolor=DXC_BORDER, zerolinecolor=DXC_BORDER),
+    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=DXC_TEXT)),
 )
 
 
@@ -152,7 +240,7 @@ def load_data() -> pd.DataFrame:
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-def kpi_card(label: str, value, color: str = "#4fc3f7", sub: str = ""):
+def kpi_card(label: str, value, color: str = "#FFFFFF", sub: str = ""):
     sub_html = f'<p class="kpi-sub">{sub}</p>' if sub else ""
     st.markdown(f"""
     <div class="kpi-card">
@@ -170,22 +258,23 @@ def sprint_group(s) -> str | None:
     """
     Normalise raw sprint strings into a canonical group name.
 
-    22.1.25.1 / 22.1.25.2 / 22.1.25 ADDS / 22.1.25.2 ADDSc  →  R25
-    TMA 22.1.19 / TMA 22.1.19 ADDS                            →  TMA R19
+    22.1.25.1 / 22.1.25.2 / 22.1.25 ADDS / 22.1.25.2 ADDSc  →  v22 R25
+    20.1.23.1 / 20.1.23.2                                     →  v20 R23
+    TMA 22.1.19 / TMA 22.1.19 ADDS                            →  TMA v22 R19
     DATAFIX 24 / SP 7.1001 / RC W30 / …                       →  kept as-is
     """
     import re
     if pd.isna(s) or str(s).strip().lower() in ("", "none"):
         return None
     s = str(s).strip()
-    # TMA prefix
-    m = re.match(r"^TMA\s+\d+\.\d+\.(\d+)", s, re.IGNORECASE)
+    # TMA prefix: TMA {major}.{minor}.{sprint_num}
+    m = re.match(r"^TMA\s+(\d+)\.\d+\.(\d+)", s, re.IGNORECASE)
     if m:
-        return f"TMA R{m.group(1)}"
+        return f"TMA v{m.group(1)} R{m.group(2)}"
     # Main pattern: {major}.{minor}.{sprint_num} …
-    m = re.match(r"^\d+\.\d+\.(\d+)", s)
+    m = re.match(r"^(\d+)\.\d+\.(\d+)", s)
     if m:
-        return f"R{m.group(1)}"
+        return f"v{m.group(1)} R{m.group(2)}"
     return s
 
 
@@ -214,14 +303,14 @@ def shorten(s: str, n: int = 40) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## 📊 Report System")
+    st.markdown("### DXC Service Desk Analytics")
     st.markdown("---")
 
     df_all = load_data()
     has_data = not df_all.empty
 
     if has_data:
-        st.markdown("### Filters")
+        st.markdown("**Filters**")
 
         min_d = df_all["created"].min().date() if "created" in df_all else None
         max_d = df_all["created"].max().date() if "created" in df_all else None
@@ -261,15 +350,16 @@ with st.sidebar:
 # Main
 # ──────────────────────────────────────────────────────────────────────────────
 
-st.title("📊 Issue Tracking Dashboard")
+st.markdown('<p class="page-title">Service Desk Analytics</p>', unsafe_allow_html=True)
+st.markdown('<p class="page-subtitle">Issue tracking · Performance monitoring · Sprint planning</p>', unsafe_allow_html=True)
 
 tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_upload = st.tabs([
-    "📋 Overview", "📈 Trends", "🔍 Analysis", "⏱️ SLA & KPIs", "🔥 Burndown", "📤 Upload",
+    "Overview", "Trends", "Analysis", "SLA & KPIs", "Burndown", "Upload",
 ])
 
 # ── TAB 5: UPLOAD (always accessible) ─────────────────────────────────────────
 with tab_upload:
-    st.markdown("### Upload a New Extract File")
+    st.markdown("#### Upload Extract File")
     st.markdown(
         "Drop an Extract `.xlsx` file below. "
         "**New records** will be inserted; **existing records** (matched by Key) will be updated."
@@ -313,7 +403,7 @@ with tab_upload:
 
     st.markdown("---")
     if has_data:
-        st.markdown("#### Current Database Snapshot")
+        st.markdown("**Database Snapshot**")
         sc1, sc2, sc3, sc4 = st.columns(4)
         sc1.metric("Total Records", f"{len(df_all):,}")
         sc2.metric("Earliest", df_all["created"].min().strftime("%Y-%m-%d") if "created" in df_all else "—")
@@ -351,14 +441,14 @@ with tab_overview:
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1: kpi_card("Total Issues",   f"{total:,}")
-    with c2: kpi_card("Open",           f"{n_open:,}",           color="#fb8c00")
-    with c3: kpi_card("Resolved",       f"{n_resolved:,}",       color="#43a047",
+    with c2: kpi_card("Open",           f"{n_open:,}",           color="#E65100")
+    with c3: kpi_card("Resolved",       f"{n_resolved:,}",       color=DXC_PURPLE_LITE,
                       sub=f"{res_rate:.1f}% resolution rate")
-    with c4: kpi_card("Critical",       f"{n_critical:,}",       color="#e53935")
+    with c4: kpi_card("Critical",       f"{n_critical:,}",       color="#C62828")
     with c5: kpi_card("SLA Met",        f"{sla_pct:.1f}%",
-                      color="#43a047" if sla_pct >= 80 else "#e53935",
+                      color=DXC_PURPLE_LITE if sla_pct >= 80 else DXC_GREY_LIGHT,
                       sub=f"from {len(sla_df):,} evaluated")
-    with c6: kpi_card("Avg Resolution", f"{avg_days:.1f}d",      color="#4fc3f7")
+    with c6: kpi_card("Avg Resolution", f"{avg_days:.1f}d",      color=DXC_PURPLE_LITE)
 
     st.markdown("---")
 
@@ -369,7 +459,7 @@ with tab_overview:
         counts = df["issue_type"].value_counts().reset_index()
         counts.columns = ["Type", "Count"]
         fig = px.pie(counts, values="Count", names="Type", hole=0.42,
-                     color_discrete_sequence=px.colors.qualitative.Set2)
+                     color_discrete_sequence=DXC_PALETTE)
         fig.update_traces(textposition="inside", textinfo="percent+label")
         fig.update_layout(showlegend=False)
         chart(fig)
@@ -384,8 +474,8 @@ with tab_overview:
                      color_discrete_map=PRIORITY_COLORS, text="Count")
         fig.update_traces(textposition="outside")
         fig.update_layout(showlegend=False,
-                          xaxis=dict(gridcolor="#1e3a5f"),
-                          yaxis=dict(gridcolor="#1e3a5f"))
+                          xaxis=dict(gridcolor=DXC_BORDER),
+                          yaxis=dict(gridcolor=DXC_BORDER))
         chart(fig)
 
     r2c1, r2c2 = st.columns(2)
@@ -395,11 +485,11 @@ with tab_overview:
         stat = df["status"].value_counts().head(10).reset_index()
         stat.columns = ["Status", "Count"]
         fig = px.bar(stat, x="Count", y="Status", orientation="h",
-                     color="Count", color_continuous_scale="Blues",
+                     color="Count", color_continuous_scale=[[0,"#1F1F1F"],[1,"#6D2077"]],
                      text="Count")
         fig.update_traces(textposition="outside")
         fig.update_layout(yaxis=dict(autorange="reversed"),
-                          xaxis=dict(gridcolor="#1e3a5f"),
+                          xaxis=dict(gridcolor=DXC_BORDER),
                           coloraxis_showscale=False)
         chart(fig)
 
@@ -409,11 +499,11 @@ with tab_overview:
         proj.columns = ["Project", "Count"]
         proj["Project"] = proj["Project"].apply(lambda s: shorten(s, 45))
         fig = px.bar(proj, x="Count", y="Project", orientation="h",
-                     color="Count", color_continuous_scale="Teal",
+                     color="Count", color_continuous_scale=[[0,"#1F1F1F"],[1,"#9B26AF"]],
                      text="Count")
         fig.update_traces(textposition="outside")
         fig.update_layout(yaxis=dict(autorange="reversed"),
-                          xaxis=dict(gridcolor="#1e3a5f"),
+                          xaxis=dict(gridcolor=DXC_BORDER),
                           coloraxis_showscale=False)
         chart(fig)
 
@@ -427,10 +517,10 @@ with tab_trends:
                .reset_index(name="Count")
                .sort_values("created_yearmonth"))
     fig = px.area(monthly, x="created_yearmonth", y="Count",
-                  color_discrete_sequence=["#1e88e5"],
+                  color_discrete_sequence=[DXC_PURPLE],
                   markers=True)
-    fig.update_layout(xaxis=dict(title="Month", gridcolor="#1e3a5f"),
-                      yaxis=dict(title="Issues", gridcolor="#1e3a5f"))
+    fig.update_layout(xaxis=dict(title="Month", gridcolor=DXC_BORDER),
+                      yaxis=dict(title="Issues", gridcolor=DXC_BORDER))
     chart(fig)
 
     c1, c2 = st.columns(2)
@@ -452,13 +542,13 @@ with tab_trends:
 
         fig = go.Figure([
             go.Bar(name="Created",  x=merged["created_yearmonth"], y=merged["Created"],
-                   marker_color="#1e88e5"),
+                   marker_color=DXC_PURPLE),
             go.Bar(name="Resolved", x=merged["created_yearmonth"], y=merged["Resolved"],
-                   marker_color="#43a047"),
+                   marker_color="#4A7C59"),
         ])
         fig.update_layout(barmode="group",
-                          xaxis=dict(gridcolor="#1e3a5f"),
-                          yaxis=dict(gridcolor="#1e3a5f"),
+                          xaxis=dict(gridcolor=DXC_BORDER),
+                          yaxis=dict(gridcolor=DXC_BORDER),
                           legend=dict(bgcolor="rgba(0,0,0,0)"),
                           **CHART_THEME)
         st.plotly_chart(fig, use_container_width=True)
@@ -473,11 +563,11 @@ with tab_trends:
                .reset_index())
         dow.columns = ["Day", "Count"]
         fig = px.bar(dow, x="Day", y="Count",
-                     color="Count", color_continuous_scale="Blues",
+                     color="Count", color_continuous_scale=[[0,"#1F1F1F"],[1,"#6D2077"]],
                      text="Count")
         fig.update_traces(textposition="outside")
-        fig.update_layout(xaxis=dict(gridcolor="#1e3a5f"),
-                          yaxis=dict(gridcolor="#1e3a5f"),
+        fig.update_layout(xaxis=dict(gridcolor=DXC_BORDER),
+                          yaxis=dict(gridcolor=DXC_BORDER),
                           coloraxis_showscale=False)
         chart(fig)
 
@@ -486,9 +576,9 @@ with tab_trends:
               .size().reset_index(name="Count")
               .sort_values("created_yearmonth"))
     fig = px.area(type_m, x="created_yearmonth", y="Count", color="issue_type",
-                  color_discrete_sequence=px.colors.qualitative.Set2)
-    fig.update_layout(xaxis=dict(gridcolor="#1e3a5f"),
-                      yaxis=dict(gridcolor="#1e3a5f"),
+                  color_discrete_sequence=DXC_PALETTE)
+    fig.update_layout(xaxis=dict(gridcolor=DXC_BORDER),
+                      yaxis=dict(gridcolor=DXC_BORDER),
                       legend=dict(bgcolor="rgba(0,0,0,0)", title="Type"))
     chart(fig)
 
@@ -502,10 +592,10 @@ with tab_analysis:
         top_a = df["assignee"].value_counts().head(15).reset_index()
         top_a.columns = ["Assignee", "Count"]
         fig = px.bar(top_a, x="Count", y="Assignee", orientation="h",
-                     color="Count", color_continuous_scale="Blues", text="Count")
+                     color="Count", color_continuous_scale=[[0,"#1F1F1F"],[1,"#6D2077"]], text="Count")
         fig.update_traces(textposition="outside")
         fig.update_layout(yaxis=dict(autorange="reversed"),
-                          xaxis=dict(gridcolor="#1e3a5f"),
+                          xaxis=dict(gridcolor=DXC_BORDER),
                           coloraxis_showscale=False)
         chart(fig)
 
@@ -515,7 +605,7 @@ with tab_analysis:
             rco = df["root_cause_origin"].dropna().value_counts().reset_index()
             rco.columns = ["Root Cause", "Count"]
             fig = px.pie(rco, values="Count", names="Root Cause", hole=0.38,
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
+                         color_discrete_sequence=DXC_PALETTE)
             fig.update_traces(textposition="inside", textinfo="percent+label")
             fig.update_layout(showlegend=False)
             chart(fig)
@@ -529,12 +619,12 @@ with tab_analysis:
             env.columns = ["Environment", "Count"]
             fig = px.bar(env, x="Environment", y="Count",
                          color="Environment",
-                         color_discrete_sequence=["#1e88e5", "#fb8c00"],
+                         color_discrete_sequence=[DXC_PURPLE, "#6D7278"],
                          text="Count")
             fig.update_traces(textposition="outside")
             fig.update_layout(showlegend=False,
-                              xaxis=dict(gridcolor="#1e3a5f"),
-                              yaxis=dict(gridcolor="#1e3a5f"))
+                              xaxis=dict(gridcolor=DXC_BORDER),
+                              yaxis=dict(gridcolor=DXC_BORDER))
             chart(fig)
 
     with c4:
@@ -543,7 +633,7 @@ with tab_analysis:
             pl = df["product_line"].dropna().value_counts().reset_index()
             pl.columns = ["Product Line", "Count"]
             fig = px.pie(pl, values="Count", names="Product Line", hole=0.4,
-                         color_discrete_sequence=["#1e88e5", "#fb8c00", "#43a047"])
+                         color_discrete_sequence=DXC_PALETTE)
             fig.update_traces(textposition="inside", textinfo="percent+label")
             fig.update_layout(showlegend=True,
                               legend=dict(bgcolor="rgba(0,0,0,0)"))
@@ -554,7 +644,7 @@ with tab_analysis:
                .unstack(fill_value=0)
                .reindex([p for p in ["Critical", "High", "Medium", "Low"]
                          if p in df["priority"].values]))
-    fig = px.imshow(pivot, color_continuous_scale="Blues",
+    fig = px.imshow(pivot, color_continuous_scale=[[0,"#1F1F1F"],[1,"#6D2077"]],
                     aspect="auto", text_auto=True)
     fig.update_layout(xaxis=dict(title="Issue Type"),
                       yaxis=dict(title="Priority"))
@@ -566,12 +656,12 @@ with tab_analysis:
         ro.columns = ["Owner", "Count"]
         fig = px.bar(ro, x="Owner", y="Count",
                      color="Owner",
-                     color_discrete_sequence=["#1e88e5", "#43a047"],
+                     color_discrete_sequence=[DXC_PURPLE, "#6D7278"],
                      text="Count")
         fig.update_traces(textposition="outside")
         fig.update_layout(showlegend=False,
-                          xaxis=dict(gridcolor="#1e3a5f"),
-                          yaxis=dict(gridcolor="#1e3a5f"))
+                          xaxis=dict(gridcolor=DXC_BORDER),
+                          yaxis=dict(gridcolor=DXC_BORDER))
         chart(fig)
 
 
@@ -583,14 +673,14 @@ with tab_sla:
     sla_pct = sla_yes / sla_tot * 100 if sla_tot > 0 else 0
 
     kc1, kc2, kc3, kc4 = st.columns(4)
-    with kc1: kpi_card("SLA Met",      f"{sla_yes:,}",   color="#43a047")
-    with kc2: kpi_card("SLA Breached", f"{sla_no:,}",    color="#e53935")
+    with kc1: kpi_card("SLA Met",      f"{sla_yes:,}",   color=DXC_PURPLE_LITE)
+    with kc2: kpi_card("SLA Breached", f"{sla_no:,}",    color="#C62828")
     with kc3: kpi_card("Compliance",   f"{sla_pct:.1f}%",
-                       color="#43a047" if sla_pct >= 80 else "#e53935",
+                       color=DXC_PURPLE_LITE if sla_pct >= 80 else DXC_GREY_LIGHT,
                        sub=f"based on {sla_tot:,} evaluated")
     with kc4:
         avg_r = pd.to_numeric(df["resolution_days"], errors="coerce").median() if "resolution_days" in df else 0
-        kpi_card("Median Resolution", f"{avg_r:.1f}d", color="#4fc3f7")
+        kpi_card("Median Resolution", f"{avg_r:.1f}d", color=DXC_PURPLE_LITE)
 
     st.markdown("---")
     c1, c2 = st.columns(2)
@@ -602,10 +692,10 @@ with tab_sla:
                      .groupby(["issue_type", "sla_justified"])
                      .size().reset_index(name="Count"))
             fig = px.bar(sla_t, x="issue_type", y="Count", color="sla_justified",
-                         color_discrete_map={"Yes": "#43a047", "No": "#e53935"},
+                         color_discrete_map={"Yes": "#6D2077", "No": "#A0A4A8"},
                          barmode="stack")
-            fig.update_layout(xaxis=dict(gridcolor="#1e3a5f", title=""),
-                              yaxis=dict(gridcolor="#1e3a5f"),
+            fig.update_layout(xaxis=dict(gridcolor=DXC_BORDER, title=""),
+                              yaxis=dict(gridcolor=DXC_BORDER),
                               legend=dict(bgcolor="rgba(0,0,0,0)", title="SLA Met"))
             chart(fig)
 
@@ -616,11 +706,11 @@ with tab_sla:
                      .groupby(["priority", "sla_justified"])
                      .size().reset_index(name="Count"))
             fig = px.bar(sla_p, x="priority", y="Count", color="sla_justified",
-                         color_discrete_map={"Yes": "#43a047", "No": "#e53935"},
+                         color_discrete_map={"Yes": "#6D2077", "No": "#A0A4A8"},
                          barmode="group",
                          category_orders={"priority": ["Critical", "High", "Medium", "Low"]})
-            fig.update_layout(xaxis=dict(gridcolor="#1e3a5f", title=""),
-                              yaxis=dict(gridcolor="#1e3a5f"),
+            fig.update_layout(xaxis=dict(gridcolor=DXC_BORDER, title=""),
+                              yaxis=dict(gridcolor=DXC_BORDER),
                               legend=dict(bgcolor="rgba(0,0,0,0)", title="SLA Met"))
             chart(fig)
 
@@ -633,8 +723,8 @@ with tab_sla:
                                color="priority",
                                color_discrete_map=PRIORITY_COLORS,
                                marginal="box", opacity=0.85)
-            fig.update_layout(xaxis=dict(title="Days to Resolve", gridcolor="#1e3a5f"),
-                              yaxis=dict(gridcolor="#1e3a5f"),
+            fig.update_layout(xaxis=dict(title="Days to Resolve", gridcolor=DXC_BORDER),
+                              yaxis=dict(gridcolor=DXC_BORDER),
                               legend=dict(bgcolor="rgba(0,0,0,0)"),
                               bargap=0.05)
             chart(fig)
@@ -670,16 +760,16 @@ with tab_sla:
             fig = go.Figure(go.Indicator(
                 mode="gauge+number",
                 value=pct,
-                number={"suffix": "%", "font": {"color": "#4fc3f7", "size": 48}},
+                number={"suffix": "%", "font": {"color": DXC_PURPLE_LITE, "size": 48}},
                 gauge=dict(
                     axis=dict(range=[0, 100], tickfont=dict(color="#cfd8dc")),
-                    bar=dict(color="#1e88e5"),
+                    bar=dict(color=DXC_PURPLE),
                     steps=[
-                        dict(range=[0, 60],  color="#2a1a1a"),
-                        dict(range=[60, 80], color="#2a2a1a"),
-                        dict(range=[80, 100],color="#1a2a1a"),
+                        dict(range=[0, 60],  color="#1F1F1F"),
+                        dict(range=[60, 80], color="#2A1A2E"),
+                        dict(range=[80, 100],color="#3D1142"),
                     ],
-                    threshold=dict(line=dict(color="#43a047", width=3), value=80),
+                    threshold=dict(line=dict(color=DXC_PURPLE_LITE, width=3), value=80),
                 ),
             ))
             fig.update_layout(height=280, **CHART_THEME)
@@ -687,7 +777,7 @@ with tab_sla:
 
 # ── TAB 5: BURNDOWN ───────────────────────────────────────────────────────────
 with tab_burndown:
-    st.markdown("### Sprint Burndown Chart")
+    st.markdown("#### Sprint Burndown")
 
     # ── Sprint selector ───────────────────────────────────────────────────────
     if "expected_sprint" not in df_all.columns:
@@ -710,15 +800,11 @@ with tab_burndown:
         st.warning("No sprint data found. The `Expected Sprint` column appears to be empty for all issues.")
         st.stop()
 
-    col_sel, col_metric = st.columns([2, 1])
-    with col_sel:
-        selected_group = st.selectbox(
-            "Select Sprint",
-            sprint_groups,
-            help="Variants like R25.1, R25.2, R25 ADDS are merged into R25",
-        )
-    with col_metric:
-        burn_metric = st.radio("Measure by", ["Issue Count", "Story Points"], horizontal=True)
+    selected_group = st.selectbox(
+        "Select Sprint",
+        sprint_groups,
+        help="Variants like R25.1, R25.2, R25 ADDS are merged into R25",
+    )
 
     # Show which raw values are included
     raw_values = group_map[selected_group]
@@ -751,15 +837,12 @@ with tab_burndown:
     df_sprint["_resolved_at"] = df_sprint["resolved"].fillna(df_sprint["closure_date"]) \
         if "closure_date" in df_sprint.columns else df_sprint["resolved"]
 
-    # Story points: fall back to 1 per issue if missing
-    use_points = burn_metric == "Story Points" and "story_points" in df_sprint.columns
-    if use_points:
-        df_sprint["_weight"] = pd.to_numeric(df_sprint["story_points"], errors="coerce").fillna(0)
-        n_unpointed = (df_sprint["_weight"] == 0).sum()
-        if n_unpointed > 0:
-            st.caption(f"⚠️ {n_unpointed} issue(s) have no story points and contribute 0 to the burn.")
-    else:
-        df_sprint["_weight"] = 1.0
+    # Story points only
+    df_sprint["_weight"] = pd.to_numeric(df_sprint["story_points"], errors="coerce").fillna(0) \
+        if "story_points" in df_sprint.columns else 0.0
+    n_unpointed = (df_sprint["_weight"] == 0).sum()
+    if n_unpointed > 0:
+        st.caption(f"⚠️ {n_unpointed} issue(s) have no story points and contribute 0 to the burn.")
 
     total_work = df_sprint["_weight"].sum()
 
@@ -790,15 +873,15 @@ with tab_burndown:
     ]["_weight"].sum()
 
     pct_done = resolved_in_sprint / total_work * 100 if total_work > 0 else 0
-    unit = "pts" if use_points else "issues"
+    unit = "pts"
 
     bk1, bk2, bk3, bk4 = st.columns(4)
     with bk1: kpi_card("Sprint",        selected_group[:30])
     with bk2: kpi_card("Total Work",    f"{total_work:.0f} {unit}")
     with bk3: kpi_card("Completed",     f"{resolved_in_sprint:.0f} {unit}",
-                       color="#43a047" if pct_done >= 80 else "#fb8c00")
+                       color=DXC_PURPLE_LITE if pct_done >= 80 else "#E65100")
     with bk4: kpi_card("Done",          f"{pct_done:.1f}%",
-                       color="#43a047" if pct_done >= 80 else "#e53935")
+                       color=DXC_PURPLE_LITE if pct_done >= 80 else DXC_GREY_LIGHT)
 
     st.markdown("---")
 
@@ -812,18 +895,21 @@ with tab_burndown:
         x=burn_df["Date"], y=burn_df["Ideal"],
         mode="lines",
         name="Ideal",
-        line=dict(color="#607d8b", width=2, dash="dash"),
+        line=dict(color=DXC_GREY, width=2, dash="dash"),
     ))
 
     # Actual burn
     fig.add_trace(go.Scatter(
         x=burn_df["Date"], y=burn_df["Remaining"],
-        mode="lines+markers",
+        mode="lines+markers+text",
         name="Actual Remaining",
-        line=dict(color="#1e88e5", width=3),
+        line=dict(color=DXC_PURPLE_LITE, width=3),
         marker=dict(size=6),
         fill="tozeroy",
-        fillcolor="rgba(30,136,229,0.10)",
+        fillcolor="rgba(109,32,119,0.12)",
+        text=[f"{v:.1f}" for v in burn_df["Remaining"]],
+        textposition="top center",
+        textfont=dict(color=DXC_PURPLE_LITE, size=11),
     ))
 
     # Shade the area between actual and ideal
@@ -831,7 +917,7 @@ with tab_burndown:
         x=pd.concat([burn_df["Date"], burn_df["Date"][::-1]]).tolist(),
         y=pd.concat([burn_df["Ideal"], burn_df["Remaining"][::-1]]).tolist(),
         fill="toself",
-        fillcolor="rgba(229,57,53,0.08)",
+        fillcolor="rgba(255,255,255,0.04)",
         line=dict(color="rgba(0,0,0,0)"),
         hoverinfo="skip",
         name="Deviation",
@@ -839,8 +925,8 @@ with tab_burndown:
     ))
 
     fig.update_layout(
-        xaxis=dict(title="Date", gridcolor="#1e3a5f", tickformat="%b %d"),
-        yaxis=dict(title=f"Remaining ({unit})", gridcolor="#1e3a5f"),
+        xaxis=dict(title="Date", gridcolor=DXC_BORDER, tickformat="%b %d"),
+        yaxis=dict(title=f"Remaining ({unit})", gridcolor=DXC_BORDER),
         legend=dict(bgcolor="rgba(0,0,0,0)"),
         hovermode="x unified",
         **CHART_THEME,
