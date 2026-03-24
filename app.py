@@ -46,17 +46,55 @@ DXC_WHITE       = "#FFFFFF"
 st.markdown(f"""
 <style>
 /* ── Base ── */
-html, body, [data-testid="stAppViewContainer"] {{
-    background-color: {DXC_BLACK};
-    color: {DXC_TEXT};
+html, body, [data-testid="stAppViewContainer"],
+[data-testid="stAppViewBlockContainer"],
+.main, .block-container {{
+    background-color: {DXC_BLACK} !important;
+    color: {DXC_TEXT} !important;
     font-family: 'Segoe UI', sans-serif;
 }}
-[data-testid="stSidebar"] {{
-    background-color: {DXC_SURFACE};
-    border-right: 1px solid {DXC_BORDER};
+[data-testid="stHeader"] {{ background: transparent !important; }}
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] > div,
+section[data-testid="stSidebar"] > div {{
+    background-color: {DXC_SURFACE} !important;
+    border-right: 1px solid {DXC_BORDER} !important;
 }}
-[data-testid="stSidebar"] * {{ color: {DXC_TEXT} !important; }}
-[data-testid="stHeader"] {{ background: transparent; }}
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] div {{
+    color: {DXC_TEXT} !important;
+}}
+[data-testid="stSidebar"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] [data-baseweb="input"] > div,
+[data-testid="stSidebar"] [data-testid="stDateInput"] input {{
+    background-color: {DXC_SURFACE2} !important;
+    border-color: {DXC_BORDER} !important;
+    color: {DXC_TEXT} !important;
+    border-radius: 4px !important;
+}}
+[data-testid="stSidebar"] hr {{
+    border-color: {DXC_BORDER} !important;
+}}
+.sidebar-brand {{
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: {DXC_PURPLE_LITE} !important;
+    text-transform: uppercase;
+    letter-spacing: 1.6px;
+    padding-bottom: 12px;
+}}
+.sidebar-section {{
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: {DXC_GREY} !important;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin: 18px 0 6px 0;
+}}
 
 /* ── KPI card ── */
 .kpi-card {{
@@ -194,9 +232,6 @@ CHART_THEME = dict(
     plot_bgcolor="rgba(0,0,0,0)",
     font=dict(color=DXC_TEXT, size=11, family="Segoe UI, sans-serif"),
     margin=dict(t=10, b=10, l=10, r=10),
-    xaxis=dict(gridcolor=DXC_BORDER, linecolor=DXC_BORDER, zerolinecolor=DXC_BORDER),
-    yaxis=dict(gridcolor=DXC_BORDER, linecolor=DXC_BORDER, zerolinecolor=DXC_BORDER),
-    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=DXC_TEXT)),
 )
 
 
@@ -279,7 +314,14 @@ def sprint_group(s) -> str | None:
 
 
 def chart(fig, **kwargs):
-    fig.update_layout(**CHART_THEME)
+    _axis = dict(gridcolor=DXC_BORDER, linecolor=DXC_BORDER,
+                 zerolinecolor=DXC_BORDER, tickfont=dict(color=DXC_GREY_LIGHT))
+    fig.update_layout(
+        **CHART_THEME,
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=DXC_TEXT)),
+    )
+    fig.update_xaxes(**_axis)
+    fig.update_yaxes(**_axis)
     st.plotly_chart(fig, use_container_width=True, **kwargs)
 
 
@@ -303,33 +345,41 @@ def shorten(s: str, n: int = 40) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("### DXC Service Desk Analytics")
-    st.markdown("---")
+    st.markdown('<p class="sidebar-brand">DXC — Service Desk Analytics</p>',
+                unsafe_allow_html=True)
 
     df_all = load_data()
     has_data = not df_all.empty
 
     if has_data:
-        st.markdown("**Filters**")
-
         min_d = df_all["created"].min().date() if "created" in df_all else None
         max_d = df_all["created"].max().date() if "created" in df_all else None
 
-        date_range = st.date_input("Date Range (Created)", value=(min_d, max_d),
-                                   min_value=min_d, max_value=max_d)
+        st.markdown('<p class="sidebar-section">Date Range</p>', unsafe_allow_html=True)
+        date_range = st.date_input("Created between", value=(min_d, max_d),
+                                   min_value=min_d, max_value=max_d,
+                                   label_visibility="collapsed")
 
+        st.markdown('<p class="sidebar-section">Issue Type</p>', unsafe_allow_html=True)
         all_types = sorted(df_all["issue_type"].dropna().unique())
-        sel_types = st.multiselect("Issue Type", all_types, default=all_types)
+        sel_types = st.multiselect("Issue Type", all_types, default=all_types,
+                                   label_visibility="collapsed")
 
+        st.markdown('<p class="sidebar-section">Priority</p>', unsafe_allow_html=True)
         pri_order = [p for p in ["Critical", "High", "Medium", "Low"]
                      if p in df_all["priority"].values]
-        sel_pri = st.multiselect("Priority", pri_order, default=pri_order)
+        sel_pri = st.multiselect("Priority", pri_order, default=pri_order,
+                                 label_visibility="collapsed")
 
+        st.markdown('<p class="sidebar-section">Project</p>', unsafe_allow_html=True)
         all_proj = sorted(df_all["project"].dropna().unique())
-        sel_proj = st.multiselect("Project", all_proj, default=all_proj)
+        sel_proj = st.multiselect("Project", all_proj, default=all_proj,
+                                  label_visibility="collapsed")
 
+        st.markdown('<p class="sidebar-section">Environment</p>', unsafe_allow_html=True)
         all_env = sorted(df_all["environment_type"].dropna().unique())
-        sel_env = st.multiselect("Environment", all_env, default=all_env)
+        sel_env = st.multiselect("Environment", all_env, default=all_env,
+                                 label_visibility="collapsed")
 
         filters = dict(
             date_range=date_range,
@@ -340,10 +390,11 @@ with st.sidebar:
         )
 
         st.markdown("---")
-        st.caption(f"Total records in DB: **{len(df_all):,}**")
+        n_filtered = len(apply_filters(df_all, filters))
+        st.caption(f"{n_filtered:,} of {len(df_all):,} records match filters")
     else:
         filters = {}
-        st.info("No data yet — use the **Upload** tab to load your first Extract file.")
+        st.info("No data — use the Upload tab.")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -473,9 +524,7 @@ with tab_overview:
         fig = px.bar(pri, x="Priority", y="Count", color="Priority",
                      color_discrete_map=PRIORITY_COLORS, text="Count")
         fig.update_traces(textposition="outside")
-        fig.update_layout(showlegend=False,
-                          xaxis=dict(gridcolor=DXC_BORDER),
-                          yaxis=dict(gridcolor=DXC_BORDER))
+        fig.update_layout(showlegend=False)
         chart(fig)
 
     r2c1, r2c2 = st.columns(2)
@@ -489,7 +538,6 @@ with tab_overview:
                      text="Count")
         fig.update_traces(textposition="outside")
         fig.update_layout(yaxis=dict(autorange="reversed"),
-                          xaxis=dict(gridcolor=DXC_BORDER),
                           coloraxis_showscale=False)
         chart(fig)
 
@@ -503,7 +551,6 @@ with tab_overview:
                      text="Count")
         fig.update_traces(textposition="outside")
         fig.update_layout(yaxis=dict(autorange="reversed"),
-                          xaxis=dict(gridcolor=DXC_BORDER),
                           coloraxis_showscale=False)
         chart(fig)
 
@@ -519,7 +566,7 @@ with tab_trends:
     fig = px.area(monthly, x="created_yearmonth", y="Count",
                   color_discrete_sequence=[DXC_PURPLE],
                   markers=True)
-    fig.update_layout(xaxis=dict(title="Month", gridcolor=DXC_BORDER),
+    fig.update_layout(
                       yaxis=dict(title="Issues", gridcolor=DXC_BORDER))
     chart(fig)
 
@@ -547,9 +594,6 @@ with tab_trends:
                    marker_color="#4A7C59"),
         ])
         fig.update_layout(barmode="group",
-                          xaxis=dict(gridcolor=DXC_BORDER),
-                          yaxis=dict(gridcolor=DXC_BORDER),
-                          legend=dict(bgcolor="rgba(0,0,0,0)"),
                           **CHART_THEME)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -566,8 +610,7 @@ with tab_trends:
                      color="Count", color_continuous_scale=[[0,"#1F1F1F"],[1,"#6D2077"]],
                      text="Count")
         fig.update_traces(textposition="outside")
-        fig.update_layout(xaxis=dict(gridcolor=DXC_BORDER),
-                          yaxis=dict(gridcolor=DXC_BORDER),
+        fig.update_layout(
                           coloraxis_showscale=False)
         chart(fig)
 
@@ -577,9 +620,6 @@ with tab_trends:
               .sort_values("created_yearmonth"))
     fig = px.area(type_m, x="created_yearmonth", y="Count", color="issue_type",
                   color_discrete_sequence=DXC_PALETTE)
-    fig.update_layout(xaxis=dict(gridcolor=DXC_BORDER),
-                      yaxis=dict(gridcolor=DXC_BORDER),
-                      legend=dict(bgcolor="rgba(0,0,0,0)", title="Type"))
     chart(fig)
 
 
@@ -595,7 +635,6 @@ with tab_analysis:
                      color="Count", color_continuous_scale=[[0,"#1F1F1F"],[1,"#6D2077"]], text="Count")
         fig.update_traces(textposition="outside")
         fig.update_layout(yaxis=dict(autorange="reversed"),
-                          xaxis=dict(gridcolor=DXC_BORDER),
                           coloraxis_showscale=False)
         chart(fig)
 
@@ -622,9 +661,7 @@ with tab_analysis:
                          color_discrete_sequence=[DXC_PURPLE, "#6D7278"],
                          text="Count")
             fig.update_traces(textposition="outside")
-            fig.update_layout(showlegend=False,
-                              xaxis=dict(gridcolor=DXC_BORDER),
-                              yaxis=dict(gridcolor=DXC_BORDER))
+            fig.update_layout(showlegend=False)
             chart(fig)
 
     with c4:
@@ -635,8 +672,7 @@ with tab_analysis:
             fig = px.pie(pl, values="Count", names="Product Line", hole=0.4,
                          color_discrete_sequence=DXC_PALETTE)
             fig.update_traces(textposition="inside", textinfo="percent+label")
-            fig.update_layout(showlegend=True,
-                              legend=dict(bgcolor="rgba(0,0,0,0)"))
+            fig.update_layout(showlegend=True)
             chart(fig)
 
     sec("Priority × Issue Type Matrix")
@@ -659,9 +695,7 @@ with tab_analysis:
                      color_discrete_sequence=[DXC_PURPLE, "#6D7278"],
                      text="Count")
         fig.update_traces(textposition="outside")
-        fig.update_layout(showlegend=False,
-                          xaxis=dict(gridcolor=DXC_BORDER),
-                          yaxis=dict(gridcolor=DXC_BORDER))
+        fig.update_layout(showlegend=False)
         chart(fig)
 
 
@@ -694,9 +728,6 @@ with tab_sla:
             fig = px.bar(sla_t, x="issue_type", y="Count", color="sla_justified",
                          color_discrete_map={"Yes": "#6D2077", "No": "#A0A4A8"},
                          barmode="stack")
-            fig.update_layout(xaxis=dict(gridcolor=DXC_BORDER, title=""),
-                              yaxis=dict(gridcolor=DXC_BORDER),
-                              legend=dict(bgcolor="rgba(0,0,0,0)", title="SLA Met"))
             chart(fig)
 
     with c2:
@@ -709,9 +740,6 @@ with tab_sla:
                          color_discrete_map={"Yes": "#6D2077", "No": "#A0A4A8"},
                          barmode="group",
                          category_orders={"priority": ["Critical", "High", "Medium", "Low"]})
-            fig.update_layout(xaxis=dict(gridcolor=DXC_BORDER, title=""),
-                              yaxis=dict(gridcolor=DXC_BORDER),
-                              legend=dict(bgcolor="rgba(0,0,0,0)", title="SLA Met"))
             chart(fig)
 
     sec("Resolution Time Distribution (days)")
@@ -723,9 +751,7 @@ with tab_sla:
                                color="priority",
                                color_discrete_map=PRIORITY_COLORS,
                                marginal="box", opacity=0.85)
-            fig.update_layout(xaxis=dict(title="Days to Resolve", gridcolor=DXC_BORDER),
-                              yaxis=dict(gridcolor=DXC_BORDER),
-                              legend=dict(bgcolor="rgba(0,0,0,0)"),
+            fig.update_layout(
                               bargap=0.05)
             chart(fig)
 
@@ -925,9 +951,7 @@ with tab_burndown:
     ))
 
     fig.update_layout(
-        xaxis=dict(title="Date", gridcolor=DXC_BORDER, tickformat="%b %d"),
         yaxis=dict(title=f"Remaining ({unit})", gridcolor=DXC_BORDER),
-        legend=dict(bgcolor="rgba(0,0,0,0)"),
         hovermode="x unified",
         **CHART_THEME,
     )
