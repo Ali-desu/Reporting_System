@@ -826,10 +826,27 @@ with tab_burndown:
         st.warning("No sprint data found. The `Expected Sprint` column appears to be empty for all issues.")
         st.stop()
 
+    # ── Quick-load button ─────────────────────────────────────────────────────
+    import datetime
+    QUICK_SPRINT = "v22 R25"
+    QUICK_START  = datetime.date(2026, 3, 8)
+    QUICK_END    = datetime.date(2026, 3, 26)
+
+    if st.button("Load current sprint  —  v22 R25  (08 Mar → 26 Mar 2026)"):
+        st.session_state["burn_sprint"] = QUICK_SPRINT
+        st.session_state["burn_start"]  = QUICK_START
+        st.session_state["burn_end"]    = QUICK_END
+
+    # ── Sprint selector ───────────────────────────────────────────────────────
+    default_sprint_idx = sprint_groups.index(st.session_state.get("burn_sprint", sprint_groups[0])) \
+        if st.session_state.get("burn_sprint") in sprint_groups else 0
+
     selected_group = st.selectbox(
         "Select Sprint",
         sprint_groups,
-        help="Variants like R25.1, R25.2, R25 ADDS are merged into R25",
+        index=default_sprint_idx,
+        key="burn_sprint",
+        help="Variants like v22 R25.1, v22 R25.2, v22 R25 ADDS are merged into v22 R25",
     )
 
     # Show which raw values are included
@@ -840,9 +857,13 @@ with tab_burndown:
     # ── Date range ────────────────────────────────────────────────────────────
     dc1, dc2 = st.columns(2)
     with dc1:
-        sprint_start = st.date_input("Sprint Start Date", value=None, key="burn_start")
+        sprint_start = st.date_input("Sprint Start Date",
+                                     value=st.session_state.get("burn_start", None),
+                                     key="burn_start")
     with dc2:
-        sprint_end = st.date_input("Sprint End Date", value=None, key="burn_end")
+        sprint_end = st.date_input("Sprint End Date",
+                                   value=st.session_state.get("burn_end", None),
+                                   key="burn_end")
 
     if not sprint_start or not sprint_end:
         st.info("Pick a start and end date for the sprint to generate the chart.")
