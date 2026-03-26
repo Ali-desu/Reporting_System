@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text, inspect
 
 from etl import clean_data, upsert, initial_load, build_engine, get_engine
+from agent import run_agent, check_api_key
 
 load_dotenv()
 
@@ -404,8 +405,8 @@ with st.sidebar:
 st.markdown('<p class="page-title">Service Desk Analytics</p>', unsafe_allow_html=True)
 st.markdown('<p class="page-subtitle">Issue tracking · Performance monitoring · Sprint planning</p>', unsafe_allow_html=True)
 
-tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_upload = st.tabs([
-    "Overview", "Trends", "Analysis", "SLA & KPIs", "Burndown", "Upload",
+tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_chat, tab_upload = st.tabs([
+    "Overview", "Trends", "Analysis", "SLA & KPIs", "Burndown", "AI Assistant", "Upload",
 ])
 
 # ── TAB 5: UPLOAD (always accessible) ─────────────────────────────────────────
@@ -462,7 +463,7 @@ with tab_upload:
         sc4.metric("Projects", df_all["project"].nunique() if "project" in df_all else "—")
 
 if not has_data:
-    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown]:
+    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_chat]:
         with t:
             st.info("No data available. Go to the **Upload** tab to load your Extract file.")
     st.stop()
@@ -471,7 +472,7 @@ if not has_data:
 df = apply_filters(df_all, filters)
 
 if df.empty:
-    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown]:
+    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_chat]:
         with t:
             st.warning("No records match the current filters.")
     st.stop()
@@ -803,196 +804,386 @@ with tab_sla:
 
 # ── TAB 5: BURNDOWN ───────────────────────────────────────────────────────────
 with tab_burndown:
+    import datetime
     st.markdown("#### Sprint Burndown")
 
-    # ── Sprint selector ───────────────────────────────────────────────────────
     if "expected_sprint" not in df_all.columns:
         st.warning("No sprint data found.")
-        st.stop()
+    else:
+        raw_sprints = df_all["expected_sprint"].dropna().unique().tolist()
+        raw_sprints = [s for s in raw_sprints if str(s).strip().lower() not in ("", "none")]
 
-    # Build group → [raw values] map
-    raw_sprints = df_all["expected_sprint"].dropna().unique().tolist()
-    raw_sprints = [s for s in raw_sprints if str(s).strip().lower() not in ("", "none")]
+        group_map: dict[str, list[str]] = {}
+        for raw in raw_sprints:
+            g = sprint_group(raw)
+            if g:
+                group_map.setdefault(g, []).append(raw)
 
-    group_map: dict[str, list[str]] = {}
-    for raw in raw_sprints:
-        g = sprint_group(raw)
-        if g:
-            group_map.setdefault(g, []).append(raw)
+        sprint_groups = sorted(group_map.keys())
 
-    sprint_groups = sorted(group_map.keys())
+        if not sprint_groups:
+            st.warning("No sprint data found. The `Expected Sprint` column appears to be empty for all issues.")
+        else:
+            QUICK_SPRINT = "v22 R25"
+            QUICK_START  = datetime.date(2026, 3, 8)
+            QUICK_END    = datetime.date(2026, 3, 26)
 
-    if not sprint_groups:
-        st.warning("No sprint data found. The `Expected Sprint` column appears to be empty for all issues.")
-        st.stop()
+            if st.button("Load current sprint  —  v22 R25  (08 Mar → 26 Mar 2026)"):
+                st.session_state["burn_sprint"] = QUICK_SPRINT
+                st.session_state["burn_start"]  = QUICK_START
+                st.session_state["burn_end"]    = QUICK_END
 
-    # ── Quick-load button ─────────────────────────────────────────────────────
-    import datetime
-    QUICK_SPRINT = "v22 R25"
-    QUICK_START  = datetime.date(2026, 3, 8)
-    QUICK_END    = datetime.date(2026, 3, 26)
+            default_sprint_idx = sprint_groups.index(st.session_state.get("burn_sprint", sprint_groups[0])) \
+                if st.session_state.get("burn_sprint") in sprint_groups else 0
 
-    if st.button("Load current sprint  —  v22 R25  (08 Mar → 26 Mar 2026)"):
-        st.session_state["burn_sprint"] = QUICK_SPRINT
-        st.session_state["burn_start"]  = QUICK_START
-        st.session_state["burn_end"]    = QUICK_END
+            selected_group = st.selectbox(
+                "Select Sprint",
+                sprint_groups,
+                index=default_sprint_idx,
+                key="burn_sprint",
+                help="Variants like v22 R25.1, v22 R25.2, v22 R25 ADDS are merged into v22 R25",
+            )
 
-    # ── Sprint selector ───────────────────────────────────────────────────────
-    default_sprint_idx = sprint_groups.index(st.session_state.get("burn_sprint", sprint_groups[0])) \
-        if st.session_state.get("burn_sprint") in sprint_groups else 0
+            raw_values = group_map[selected_group]
+            with st.expander(f"Includes {len(raw_values)} raw sprint value(s)", expanded=False):
+                st.write(", ".join(sorted(raw_values)))
 
-    selected_group = st.selectbox(
-        "Select Sprint",
-        sprint_groups,
-        index=default_sprint_idx,
-        key="burn_sprint",
-        help="Variants like v22 R25.1, v22 R25.2, v22 R25 ADDS are merged into v22 R25",
-    )
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                sprint_start = st.date_input("Sprint Start Date",
+                                             value=st.session_state.get("burn_start", None),
+                                             key="burn_start")
+            with dc2:
+                sprint_end = st.date_input("Sprint End Date",
+                                           value=st.session_state.get("burn_end", None),
+                                           key="burn_end")
 
-    # Show which raw values are included
-    raw_values = group_map[selected_group]
-    with st.expander(f"Includes {len(raw_values)} raw sprint value(s)", expanded=False):
-        st.write(", ".join(sorted(raw_values)))
+            if not sprint_start or not sprint_end:
+                st.info("Pick a start and end date for the sprint to generate the chart.")
+            elif sprint_end <= sprint_start:
+                st.error("End date must be after start date.")
+            else:
+                df_sprint = df_all[df_all["expected_sprint"].isin(raw_values)].copy()
 
-    # ── Date range ────────────────────────────────────────────────────────────
-    dc1, dc2 = st.columns(2)
-    with dc1:
-        sprint_start = st.date_input("Sprint Start Date",
-                                     value=st.session_state.get("burn_start", None),
-                                     key="burn_start")
-    with dc2:
-        sprint_end = st.date_input("Sprint End Date",
-                                   value=st.session_state.get("burn_end", None),
-                                   key="burn_end")
+                if df_sprint.empty:
+                    st.warning(f"No issues found for sprint **{selected_group}**.")
+                else:
+                    # ── Burndown mode selector ─────────────────────────────────────
+                    burn_mode = st.radio(
+                        "Burndown metric",
+                        ["Story Points", "Ticket Count"],
+                        horizontal=True,
+                        key="burn_mode",
+                    )
 
-    if not sprint_start or not sprint_end:
-        st.info("Pick a start and end date for the sprint to generate the chart.")
-        st.stop()
+                    if burn_mode == "Ticket Count":
+                        st.caption(
+                            "**Ticket Count mode** — each issue counts as 1 unit of work, "
+                            "regardless of story points. Total work = number of issues in the sprint. "
+                            "An issue is 'burned' on the day it was resolved. "
+                            "Useful when story points are missing or unreliable, or when you want "
+                            "to track delivery pace purely by issue throughput."
+                        )
 
-    if sprint_end <= sprint_start:
-        st.error("End date must be after start date.")
-        st.stop()
+                    df_sprint["_resolved_at"] = df_sprint["resolved"].fillna(df_sprint["closure_date"]) \
+                        if "closure_date" in df_sprint.columns else df_sprint["resolved"]
 
-    # ── Filter issues for this sprint group ───────────────────────────────────
-    df_sprint = df_all[df_all["expected_sprint"].isin(raw_values)].copy()
+                    if burn_mode == "Story Points":
+                        df_sprint["_weight"] = pd.to_numeric(df_sprint["story_points"], errors="coerce").fillna(0) \
+                            if "story_points" in df_sprint.columns else 0.0
+                        n_unpointed = (df_sprint["_weight"] == 0).sum()
+                        if n_unpointed > 0:
+                            st.caption(f"⚠️ {n_unpointed} issue(s) have no story points and contribute 0 to the burn.")
+                        unit = "pts"
+                    else:
+                        df_sprint["_weight"] = 1.0
+                        unit = "tickets"
 
-    if df_sprint.empty:
-        st.warning(f"No issues found for sprint **{selected_group}**.")
-        st.stop()
+                    total_work = df_sprint["_weight"].sum()
 
-    # Determine resolution date (use resolved, fallback to closure_date)
-    df_sprint["_resolved_at"] = df_sprint["resolved"].fillna(df_sprint["closure_date"]) \
-        if "closure_date" in df_sprint.columns else df_sprint["resolved"]
+                    days = pd.date_range(start=sprint_start, end=sprint_end, freq="D")
+                    remaining = []
+                    for day in days:
+                        day_ts = pd.Timestamp(day)
+                        resolved_by_day = df_sprint[
+                            df_sprint["_resolved_at"].notna() &
+                            (df_sprint["_resolved_at"] <= day_ts + pd.Timedelta(hours=23, minutes=59))
+                        ]["_weight"].sum()
+                        remaining.append(total_work - resolved_by_day)
 
-    # Story points only
-    df_sprint["_weight"] = pd.to_numeric(df_sprint["story_points"], errors="coerce").fillna(0) \
-        if "story_points" in df_sprint.columns else 0.0
-    n_unpointed = (df_sprint["_weight"] == 0).sum()
-    if n_unpointed > 0:
-        st.caption(f"⚠️ {n_unpointed} issue(s) have no story points and contribute 0 to the burn.")
+                    burn_df = pd.DataFrame({"Date": days, "Remaining": remaining})
+                    n_days = len(days)
+                    ideal = [total_work * (1 - i / (n_days - 1)) for i in range(n_days)] if n_days > 1 else [0]
+                    burn_df["Ideal"] = ideal
 
-    total_work = df_sprint["_weight"].sum()
+                    resolved_in_sprint = df_sprint[
+                        df_sprint["_resolved_at"].notna() &
+                        (df_sprint["_resolved_at"] >= pd.Timestamp(sprint_start)) &
+                        (df_sprint["_resolved_at"] <= pd.Timestamp(sprint_end) + pd.Timedelta(hours=23, minutes=59))
+                    ]["_weight"].sum()
 
-    # ── Build daily remaining series ──────────────────────────────────────────
-    days = pd.date_range(start=sprint_start, end=sprint_end, freq="D")
+                    pct_done = resolved_in_sprint / total_work * 100 if total_work > 0 else 0
 
-    remaining = []
-    for day in days:
-        day_ts = pd.Timestamp(day)
-        resolved_by_day = df_sprint[
-            df_sprint["_resolved_at"].notna() &
-            (df_sprint["_resolved_at"] <= day_ts + pd.Timedelta(hours=23, minutes=59))
-        ]["_weight"].sum()
-        remaining.append(total_work - resolved_by_day)
+                    bk1, bk2, bk3, bk4 = st.columns(4)
+                    with bk1: kpi_card("Sprint",     selected_group[:30])
+                    with bk2: kpi_card("Total Work", f"{total_work:.0f} {unit}")
+                    with bk3: kpi_card("Completed",  f"{resolved_in_sprint:.0f} {unit}",
+                                       color=DXC_PURPLE_LITE if pct_done >= 80 else "#E65100")
+                    with bk4: kpi_card("Done",       f"{pct_done:.1f}%",
+                                       color=DXC_PURPLE_LITE if pct_done >= 80 else DXC_GREY_LIGHT)
 
-    burn_df = pd.DataFrame({"Date": days, "Remaining": remaining})
+                    st.markdown("---")
+                    sec(f"Burndown — {selected_group}")
 
-    # Ideal straight-line burndown
-    n_days = len(days)
-    ideal = [total_work * (1 - i / (n_days - 1)) for i in range(n_days)] if n_days > 1 else [0]
-    burn_df["Ideal"] = ideal
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=burn_df["Date"], y=burn_df["Ideal"],
+                        mode="lines", name="Ideal",
+                        line=dict(color=DXC_GREY, width=2, dash="dash"),
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=burn_df["Date"], y=burn_df["Remaining"],
+                        mode="lines+markers+text", name="Actual Remaining",
+                        line=dict(color=DXC_PURPLE_LITE, width=3),
+                        marker=dict(size=6),
+                        fill="tozeroy", fillcolor="rgba(109,32,119,0.12)",
+                        text=[f"{v:.1f}" for v in burn_df["Remaining"]],
+                        textposition="top center",
+                        textfont=dict(color=DXC_PURPLE_LITE, size=11),
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=pd.concat([burn_df["Date"], burn_df["Date"][::-1]]).tolist(),
+                        y=pd.concat([burn_df["Ideal"], burn_df["Remaining"][::-1]]).tolist(),
+                        fill="toself", fillcolor="rgba(255,255,255,0.04)",
+                        line=dict(color="rgba(0,0,0,0)"),
+                        hoverinfo="skip", name="Deviation", showlegend=True,
+                    ))
+                    fig.update_layout(
+                        yaxis=dict(title=f"Remaining ({unit})", gridcolor=DXC_BORDER),
+                        hovermode="x unified", **CHART_THEME,
+                    )
+                    chart(fig)
 
-    # ── KPI cards ─────────────────────────────────────────────────────────────
-    resolved_in_sprint = df_sprint[
-        df_sprint["_resolved_at"].notna() &
-        (df_sprint["_resolved_at"] >= pd.Timestamp(sprint_start)) &
-        (df_sprint["_resolved_at"] <= pd.Timestamp(sprint_end) + pd.Timedelta(hours=23, minutes=59))
-    ]["_weight"].sum()
+                    with st.expander("Daily breakdown"):
+                        burn_df["Burned Today"] = burn_df["Remaining"].shift(1).fillna(total_work) - burn_df["Remaining"]
+                        burn_df["% Done"] = ((total_work - burn_df["Remaining"]) / total_work * 100).round(1)
+                        burn_df["Date"] = burn_df["Date"].dt.strftime("%Y-%m-%d")
+                        burn_df["Remaining"] = burn_df["Remaining"].round(1)
+                        burn_df["Ideal"] = burn_df["Ideal"].round(1)
+                        burn_df["Burned Today"] = burn_df["Burned Today"].round(1)
+                        st.dataframe(burn_df[["Date", "Remaining", "Ideal", "Burned Today", "% Done"]],
+                                     use_container_width=True, hide_index=True)
 
-    pct_done = resolved_in_sprint / total_work * 100 if total_work > 0 else 0
-    unit = "pts"
+                    with st.expander(f"Issues in this sprint ({len(df_sprint)})"):
+                        show_cols = [c for c in ["key", "summary", "issue_type", "priority",
+                                                  "status", "story_points", "_resolved_at"]
+                                     if c in df_sprint.columns]
+                        st.dataframe(df_sprint[show_cols].rename(columns={"_resolved_at": "resolved_at"}),
+                                     use_container_width=True, hide_index=True)
 
-    bk1, bk2, bk3, bk4 = st.columns(4)
-    with bk1: kpi_card("Sprint",        selected_group[:30])
-    with bk2: kpi_card("Total Work",    f"{total_work:.0f} {unit}")
-    with bk3: kpi_card("Completed",     f"{resolved_in_sprint:.0f} {unit}",
-                       color=DXC_PURPLE_LITE if pct_done >= 80 else "#E65100")
-    with bk4: kpi_card("Done",          f"{pct_done:.1f}%",
-                       color=DXC_PURPLE_LITE if pct_done >= 80 else DXC_GREY_LIGHT)
+                    # ── Carried-over issues ────────────────────────────────────────────
+                    st.markdown("---")
+                    sec("Carried-Over Issues")
+                    st.caption(
+                        "Issues currently assigned to this sprint whose **Original Expected Sprint** "
+                        "was a different sprint — meaning they slipped from a previous delivery."
+                    )
+
+                    if "original_expected_sprint" not in df_sprint.columns:
+                        st.info(
+                            "The `Original Expected Sprint` column is not in the database. "
+                            "Re-upload your extract using **Replace all** to capture it."
+                        )
+                    else:
+                        # Normalise original sprint and compare to current sprint group
+                        df_sprint["_orig_group"] = df_sprint["original_expected_sprint"].apply(sprint_group)
+                        carried = df_sprint[
+                            df_sprint["_orig_group"].notna() &
+                            (df_sprint["_orig_group"] != selected_group)
+                        ].copy()
+
+                        co1, co2, co3, co4 = st.columns(4)
+                        with co1: kpi_card("Carried Over", f"{len(carried)}", color="#E65100")
+                        with co2: kpi_card("Of Sprint Total", f"{len(carried)/len(df_sprint)*100:.1f}%", color="#E65100")
+                        with co3:
+                            co_pts = carried["_weight"].sum()
+                            co_label = "Carried Points" if unit == "pts" else "Carried Tickets"
+                            kpi_card(co_label, f"{co_pts:.0f} {unit}", color="#E65100")
+                        with co4:
+                            co_open = int((carried["is_resolved"] == 0).sum()) if "is_resolved" in carried.columns else "—"
+                            kpi_card("Still Open", f"{co_open}", color="#C62828")
+
+                        if carried.empty:
+                            st.success("No carried-over issues — all tickets in this sprint were originally planned here.")
+                        else:
+                            # Group by original sprint for a summary
+                            origin_summary = (
+                                carried.groupby("_orig_group")
+                                .agg(
+                                    Issues=("key", "count"),
+                                    Story_Points=("_weight", "sum"),
+                                    Open=("is_resolved", lambda x: (x == 0).sum() if "is_resolved" in carried.columns else 0),
+                                )
+                                .reset_index()
+                                .rename(columns={"_orig_group": "Original Sprint", "Story_Points": "Story Points"})
+                                .sort_values("Issues", ascending=False)
+                            )
+                            origin_summary["Story Points"] = origin_summary["Story Points"].round(1)
+
+                            sec("Where Did They Come From?")
+                            fig = px.bar(
+                                origin_summary,
+                                x="Issues", y="Original Sprint",
+                                orientation="h",
+                                color="Issues",
+                                color_continuous_scale=[[0, "#2A1A1A"], [1, "#C62828"]],
+                                text="Issues",
+                            )
+                            fig.update_traces(textposition="outside")
+                            fig.update_layout(
+                                yaxis=dict(autorange="reversed"),
+                                coloraxis_showscale=False,
+                            )
+                            chart(fig)
+
+                            sec("Carried-Over Issue Details")
+                            detail_cols = [c for c in [
+                                "key", "summary", "priority", "status",
+                                "_orig_group", "story_points", "_resolved_at", "assignee"
+                            ] if c in carried.columns]
+                            st.dataframe(
+                                carried[detail_cols]
+                                .rename(columns={"_orig_group": "original_sprint", "_resolved_at": "resolved_at"})
+                                .sort_values("priority", key=lambda s: s.map(
+                                    {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+                                ).fillna(4)),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+
+
+# ── TAB: AI ASSISTANT ─────────────────────────────────────────────────────────
+with tab_chat:
+    st.markdown("#### AI Analytics Assistant")
+    st.caption("Ask questions about your data in plain English. The assistant queries the live database to answer.")
+
+    # ── API key status banner ─────────────────────────────────────────────────
+    api_ready = check_api_key()
+    if not api_ready:
+        st.warning(
+            "**API key not configured.** The assistant is ready but inactive.\n\n"
+            "To activate:\n"
+            "1. Get a key at [console.anthropic.com](https://console.anthropic.com)\n"
+            "2. Add to your `.env` file:  `ANTHROPIC_API_KEY=sk-ant-...`\n"
+            "3. Restart the app",
+            icon="🔑",
+        )
+
+    # ── Preview panel (shown only when no API key) ────────────────────────────
+    if not api_ready:
+        st.markdown('<p class="sec-title">Preview — Example Conversation</p>', unsafe_allow_html=True)
+        st.caption("This is how the assistant will respond once your API key is configured.")
+
+        DEMO = [
+            ("user",      "Give me an overall summary of the current state of the service desk."),
+            ("assistant", (
+                "Here's the current snapshot of your service desk:\n\n"
+                "| Metric | Value |\n"
+                "|---|---|\n"
+                "| Total Issues | 7,750 |\n"
+                "| Open | 3,214 |\n"
+                "| Resolved | 4,536 |\n"
+                "| Resolution Rate | 58.5% |\n"
+                "| Critical Open | 47 |\n"
+                "| SLA Compliance | 72.3% |\n"
+                "| Avg Resolution Time | 8.4 days |\n\n"
+                "**Key observations:**\n"
+                "- SLA compliance is below the 80% target — worth investigating which issue types are driving breaches.\n"
+                "- 47 critical issues remain open. I'd recommend prioritising those immediately.\n"
+                "- Resolution rate has improved 4.2% compared to last month.\n\n"
+                "Would you like me to drill into SLA breaches by priority, or show you who owns the open critical issues?"
+            )),
+            ("user",      "Who owns the open critical issues?"),
+            ("assistant", (
+                "Here are the assignees with the most open critical issues:\n\n"
+                "| Assignee | Open Critical | Total Open | Avg Days Open |\n"
+                "|---|---|---|---|\n"
+                "| Alice Martin | 9 | 34 | 12.1 |\n"
+                "| Bob Nguyen | 7 | 28 | 9.4 |\n"
+                "| Sara Dupont | 6 | 19 | 15.7 |\n"
+                "| Unassigned | 11 | 52 | — |\n\n"
+                "**Note:** 11 critical issues are currently unassigned — these should be triaged immediately as they have no owner."
+            )),
+        ]
+        for role, content in DEMO:
+            with st.chat_message(role):
+                st.markdown(content)
+
+        st.markdown("---")
+
+    # ── Suggested prompts ────────────────────────────────────────────────────
+    st.markdown('<p class="sec-title">Suggested Questions</p>', unsafe_allow_html=True)
+    suggestions = [
+        "Give me an overall summary of the current state of the service desk.",
+        "What is our SLA compliance rate and how has it trended over the last 6 months?",
+        "Which assignees have the highest and lowest resolution rates?",
+        "How many critical issues are currently open and who owns them?",
+        "Is sprint v22 R25 on track to complete on time?",
+        "Which projects have the most unresolved issues right now?",
+        "Show me the monthly trend of issues created vs resolved for this year.",
+        "What are the most common root cause origins for our bugs?",
+    ]
+
+    cols = st.columns(2)
+    for i, s in enumerate(suggestions):
+        if cols[i % 2].button(s, key=f"suggestion_{i}", use_container_width=True):
+            st.session_state["chat_prefill"] = s
 
     st.markdown("---")
 
-    # ── Burndown chart ────────────────────────────────────────────────────────
-    sec(f"Burndown — {selected_group}")
+    # ── Conversation history ──────────────────────────────────────────────────
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []      # Claude message format
+    if "chat_display" not in st.session_state:
+        st.session_state.chat_display = []      # {"role", "content"} for display
 
-    fig = go.Figure()
+    # Render prior messages
+    for msg in st.session_state.chat_display:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-    # Ideal line
-    fig.add_trace(go.Scatter(
-        x=burn_df["Date"], y=burn_df["Ideal"],
-        mode="lines",
-        name="Ideal",
-        line=dict(color=DXC_GREY, width=2, dash="dash"),
-    ))
+    # Handle suggestion button prefill
+    prefill = st.session_state.pop("chat_prefill", None)
 
-    # Actual burn
-    fig.add_trace(go.Scatter(
-        x=burn_df["Date"], y=burn_df["Remaining"],
-        mode="lines+markers+text",
-        name="Actual Remaining",
-        line=dict(color=DXC_PURPLE_LITE, width=3),
-        marker=dict(size=6),
-        fill="tozeroy",
-        fillcolor="rgba(109,32,119,0.12)",
-        text=[f"{v:.1f}" for v in burn_df["Remaining"]],
-        textposition="top center",
-        textfont=dict(color=DXC_PURPLE_LITE, size=11),
-    ))
+    # ── Input ─────────────────────────────────────────────────────────────────
+    prompt = st.chat_input("Ask anything about your service desk data…")
+    if not prompt and prefill:
+        prompt = prefill
 
-    # Shade the area between actual and ideal
-    fig.add_trace(go.Scatter(
-        x=pd.concat([burn_df["Date"], burn_df["Date"][::-1]]).tolist(),
-        y=pd.concat([burn_df["Ideal"], burn_df["Remaining"][::-1]]).tolist(),
-        fill="toself",
-        fillcolor="rgba(255,255,255,0.04)",
-        line=dict(color="rgba(0,0,0,0)"),
-        hoverinfo="skip",
-        name="Deviation",
-        showlegend=True,
-    ))
+    if prompt:
+        # Show user message immediately
+        st.session_state.chat_display.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-    fig.update_layout(
-        yaxis=dict(title=f"Remaining ({unit})", gridcolor=DXC_BORDER),
-        hovermode="x unified",
-        **CHART_THEME,
-    )
-    chart(fig)
+        # Run agent
+        with st.chat_message("assistant"):
+            with st.spinner("Querying database…"):
+                reply = run_agent(
+                    user_message=prompt,
+                    engine=_engine(),
+                    history=st.session_state.chat_history,
+                )
+            st.markdown(reply)
 
-    # ── Daily completion table ────────────────────────────────────────────────
-    with st.expander("Daily breakdown"):
-        burn_df["Burned Today"] = burn_df["Remaining"].shift(1).fillna(total_work) - burn_df["Remaining"]
-        burn_df["% Done"] = ((total_work - burn_df["Remaining"]) / total_work * 100).round(1)
-        burn_df["Date"] = burn_df["Date"].dt.strftime("%Y-%m-%d")
-        burn_df["Remaining"] = burn_df["Remaining"].round(1)
-        burn_df["Ideal"] = burn_df["Ideal"].round(1)
-        burn_df["Burned Today"] = burn_df["Burned Today"].round(1)
-        st.dataframe(burn_df[["Date", "Remaining", "Ideal", "Burned Today", "% Done"]],
-                     use_container_width=True, hide_index=True)
+        # Update histories
+        st.session_state.chat_display.append({"role": "assistant", "content": reply})
+        st.session_state.chat_history.append({"role": "user",      "content": prompt})
+        st.session_state.chat_history.append({"role": "assistant", "content": reply})
 
-    # ── Issues in sprint ──────────────────────────────────────────────────────
-    with st.expander(f"Issues in this sprint ({len(df_sprint)})"):
-        show_cols = [c for c in ["key", "summary", "issue_type", "priority",
-                                  "status", "story_points", "_resolved_at"]
-                     if c in df_sprint.columns]
-        st.dataframe(df_sprint[show_cols].rename(columns={"_resolved_at": "resolved_at"}),
-                     use_container_width=True, hide_index=True)
+    # ── Clear conversation ────────────────────────────────────────────────────
+    if st.session_state.chat_display:
+        if st.button("Clear conversation", key="clear_chat"):
+            st.session_state.chat_history = []
+            st.session_state.chat_display = []
+            st.rerun()

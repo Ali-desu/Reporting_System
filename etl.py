@@ -85,6 +85,7 @@ COLUMNS_MAP = {
     "Resolution Owner":                     "resolution_owner",
     "Fix versions":                         "fix_versions",
     "Expected Sprint":                      "expected_sprint",
+    "Original Expected Sprint":             "original_expected_sprint",
     "Baseline / Standard Issue":            "baseline_standard_issue",
 }
 
@@ -130,7 +131,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     available = {k: v for k, v in COLUMNS_MAP.items() if k in df.columns}
     df = df[list(available.keys())].rename(columns=available).copy()
 
-    # 2. Drop entirely-null columns (e.g. Committed Release)
+    # 2. Drop rows with no Key (empty trailing rows in Excel exports)
+    #    Trim key first so "ABC-123 " and "ABC-123" are treated as the same,
+    #    then deduplicate — keep last occurrence of each key
+    if "key" in df.columns:
+        df["key"] = df["key"].astype(str).str.strip()
+        df = df[df["key"].notna() & (df["key"] != "") & (df["key"] != "nan")].copy()
+        df = df.drop_duplicates(subset=["key"], keep="last")
+
+    # 3. Drop entirely-null columns (e.g. Committed Release)
     df.dropna(axis=1, how="all", inplace=True)
 
     # 3. Parse KPI strings → numeric minutes; keep originals too
@@ -176,7 +185,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         df["created_yearmonth"] = df["created"].dt.to_period("M").astype(str)
         df["created_year"]      = df["created"].dt.year
         df["created_month"]     = df["created"].dt.month
-        df["created_week"]      = df["created"].dt.isocalendar().week.astype("int64")
+        df["created_week"]      = df["created"].dt.isocalendar().week.astype(float)
 
     return df
 
@@ -236,6 +245,7 @@ def initial_load(df: pd.DataFrame, engine) -> int:
                 resolution_owner                 VARCHAR(100),
                 fix_versions                     VARCHAR(300),
                 expected_sprint                  VARCHAR(200),
+                original_expected_sprint         VARCHAR(200),
                 baseline_standard_issue          VARCHAR(10),
                 kpi_time_to_solve_minutes        FLOAT,
                 kpi_time_initial_response_minutes FLOAT,
