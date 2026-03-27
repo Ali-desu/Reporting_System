@@ -452,12 +452,19 @@ def run_agent(user_message: str, engine, history: list | None = None) -> str:
 
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
+        try:
+            import streamlit as st
+            api_key = st.secrets.get("anthropic", {}).get("api_key", "").strip()
+        except Exception:
+            pass
+    if not api_key:
         return (
             "**API key not configured.**\n\n"
             "To activate the assistant:\n"
             "1. Get a key at console.anthropic.com\n"
             "2. Add it to your `.env` file:  `ANTHROPIC_API_KEY=sk-ant-...`\n"
-            "3. Restart the app"
+            "3. On Streamlit Cloud: add it under App Settings → Secrets\n"
+            "4. Restart the app"
         )
 
     client = anthropic.Anthropic(api_key=api_key)
@@ -506,5 +513,11 @@ def run_agent(user_message: str, engine, history: list | None = None) -> str:
 
 
 def check_api_key() -> bool:
-    """Return True if ANTHROPIC_API_KEY is set."""
-    return bool(os.getenv("ANTHROPIC_API_KEY", "").strip())
+    """Return True if ANTHROPIC_API_KEY is set (env or st.secrets)."""
+    if os.getenv("ANTHROPIC_API_KEY", "").strip():
+        return True
+    try:
+        import streamlit as st
+        return bool(st.secrets.get("anthropic", {}).get("api_key", "").strip())
+    except Exception:
+        return False
