@@ -993,7 +993,7 @@ with tab_burndown:
     st.markdown("#### Sprint Burndown — R25 Committed Scope")
 
     QUICK_START = datetime.date(2026, 3, 8)
-    QUICK_END   = datetime.date(2026, 3, 26)
+    QUICK_END   = datetime.date(2026, 3, 27)
 
     # ── Load scope (cached) ────────────────────────────────────────────────────
     try:
