@@ -14,7 +14,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text, inspect
 
-from etl import clean_data, upsert, initial_load, build_engine, get_engine
+from etl import clean_data, upsert, initial_load, build_engine, get_engine, load_release_lifecycle
 from agent import run_agent, check_api_key
 
 load_dotenv()
@@ -254,9 +254,22 @@ def _table_exists(engine) -> bool:
     return inspect(engine).has_table("issues")
 
 
+def _rl_table_exists(engine) -> bool:
+    return inspect(engine).has_table("r25_scope")
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_r25_scope() -> pd.DataFrame:
-    """Load and resolve scope keys from Release_lifecycle_R25.xlsx (cached 1 h)."""
+    """Load scope from DB (r25_scope table), fall back to local Excel."""
+    try:
+        eng = _engine()
+        if _rl_table_exists(eng):
+            scope = pd.read_sql("SELECT * FROM r25_scope", con=eng)
+            return scope
+    except Exception:
+        pass
+
+    # ── Local file fallback ───────────────────────────────────────────────────
     _raw = pd.read_excel("data/Release_lifecycle_R25.xlsx", sheet_name="Scope UPDATE", header=0)
     _raw.columns = [str(c).strip() for c in _raw.columns]
     scope = _raw[["Key", "expected sprint", "Story point", "statut",
@@ -268,7 +281,6 @@ def load_r25_scope() -> pd.DataFrame:
         scope["key"].notna() & (scope["key"] != "nan") & (scope["key"] != "")
     ].reset_index(drop=True)
 
-    # Fill null scope_sprint from Jira extract, then jira_sprint column
     null_idx = scope[scope["scope_sprint"].isna()].index.tolist()
     if null_idx:
         try:
@@ -295,42 +307,57 @@ def load_r25_scope() -> pd.DataFrame:
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_team_availability():
-    """Load team availability table + sprint metadata from Release_lifecycle_R25.xlsx."""
-    import re as _re
+    """Load team availability + sprint metadata from DB, fall back to local Excel."""
+    import datetime as _dt
+
+    try:
+        eng = _engine()
+        if inspect(eng).has_table("r25_team_avail") and inspect(eng).has_table("r25_sprint_meta"):
+            team = pd.read_sql("SELECT squad, name, cap_prod FROM r25_team_avail", con=eng)
+            meta = pd.read_sql("SELECT * FROM r25_sprint_meta WHERE sprint_name='R25'", con=eng)
+            if not meta.empty:
+                row = meta.iloc[0]
+                sprint_info = {
+                    "duration_days":  float(row["duration_days"]) if pd.notna(row["duration_days"]) else 15.0,
+                    "start":          pd.Timestamp(row["sprint_start"]).date() if pd.notna(row["sprint_start"]) else None,
+                    "end":            pd.Timestamp(row["sprint_end"]).date()   if pd.notna(row["sprint_end"])   else None,
+                    "cap_planifiee":  float(row["cap_planifiee"])  if pd.notna(row["cap_planifiee"])  else None,
+                    "velocite_reele": float(row["velocite_reele"]) if pd.notna(row["velocite_reele"]) else None,
+                    "sp_vs_jh":       float(row["sp_vs_jh"])       if pd.notna(row["sp_vs_jh"])       else None,
+                }
+                return team, sprint_info
+    except Exception:
+        pass
+
+    # ── Local file fallback ───────────────────────────────────────────────────
     raw = pd.read_excel(
         "data/Release_lifecycle_R25.xlsx",
         sheet_name="Team availibility", header=None
     )
 
-    # ── Sprint metadata (top-right block) ─────────────────────────────────────
     sprint_duration = float(raw.iloc[0, 13]) if pd.notna(raw.iloc[0, 13]) else 15.0
     cap_planifiee   = float(raw.iloc[0, 19]) if pd.notna(raw.iloc[0, 19]) else None
     velocite_reele  = float(raw.iloc[1, 19]) if pd.notna(raw.iloc[1, 19]) else None
     sp_vs_jh        = float(raw.iloc[23, 13]) if pd.notna(raw.iloc[23, 13]) else None
 
-    # Parse start date — Excel stores DD/MM/YYYY; pandas may misread as MM/DD
     try:
         start_dt = pd.to_datetime(raw.iloc[0, 16])
         end_dt   = pd.to_datetime(str(raw.iloc[1, 16]), dayfirst=True)
-        if start_dt > end_dt:          # month/day were swapped by pandas
+        if start_dt > end_dt:
             start_dt = pd.Timestamp(start_dt.year, start_dt.day, start_dt.month)
         sprint_start = start_dt.date()
         sprint_end   = end_dt.date()
     except Exception:
-        import datetime as _dt
         sprint_start = _dt.date(2026, 3, 8)
         sprint_end   = _dt.date(2026, 3, 27)
 
-    # ── Team table (rows 1-21, cols 0-7) ──────────────────────────────────────
-    team = raw.iloc[1:22, [0, 1, 2, 3, 4, 5, 6, 7]].copy()
-    team.columns = ["squad", "name", "vacation", "formation", "transverse",
-                    "availability", "contingence", "cap_prod"]
+    team = raw.iloc[1:22, [0, 1, 6, 7]].copy()
+    team.columns = ["squad", "name", "contingence", "cap_prod"]
     team = team[team["name"].notna() & (team["name"].astype(str).str.strip() != "nan")].copy()
-    team["name"]         = team["name"].astype(str).str.strip()
-    team["squad"]        = team["squad"].astype(str).str.strip().replace("nan", "—")
-    team["cap_prod"]     = pd.to_numeric(team["cap_prod"],    errors="coerce").fillna(0)
-    team["availability"] = pd.to_numeric(team["availability"], errors="coerce").fillna(0)
-    team = team.reset_index(drop=True)
+    team["name"]    = team["name"].astype(str).str.strip()
+    team["squad"]   = team["squad"].astype(str).str.strip().replace({"nan": "—"})
+    team["cap_prod"]= pd.to_numeric(team["cap_prod"], errors="coerce").fillna(0)
+    team = team[["squad", "name", "cap_prod"]].reset_index(drop=True)
 
     sprint_info = {
         "duration_days":  sprint_duration,
@@ -574,6 +601,42 @@ with tab_upload:
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Database error: {exc}")
+
+    st.markdown("---")
+    st.markdown("#### Upload Release Lifecycle File")
+    st.markdown(
+        "Upload the **Release_lifecycle_R25.xlsx** file to load sprint scope and team "
+        "availability into the database. This enables the **Burndown** and **Team** tabs "
+        "to work without a local file."
+    )
+
+    uploaded_rl = st.file_uploader(
+        "Drag & drop Release_lifecycle_R25.xlsx",
+        type=["xlsx", "xls"],
+        key="rl_uploader",
+        label_visibility="collapsed",
+    )
+
+    if uploaded_rl:
+        st.info(f"**{uploaded_rl.name}** — {uploaded_rl.size / 1024:.1f} KB")
+        if st.button("⚡ Load Scope & Team Availability into Database", type="primary", key="rl_load_btn"):
+            with st.spinner("Parsing Release Lifecycle file…"):
+                try:
+                    result = load_release_lifecycle(uploaded_rl.read(), _engine())
+                    st.success(
+                        f"✅ Loaded **{result['scope_rows']} scope tickets** and "
+                        f"**{result['team_rows']} team members** into the database."
+                    )
+                    load_r25_scope.clear()
+                    load_team_availability.clear()
+                except Exception as exc:
+                    st.error(f"Failed to load Release Lifecycle file: {exc}")
+
+    rl_loaded = _rl_table_exists(_engine())
+    if rl_loaded:
+        st.caption("✅ Release Lifecycle data is loaded in the database.")
+    else:
+        st.caption("⚠️ Release Lifecycle data not yet in database — upload the file above.")
 
     st.markdown("---")
     if has_data:
