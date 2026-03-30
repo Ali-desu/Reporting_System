@@ -30,18 +30,18 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── DXC colour tokens ──────────────────────────────────────────────────────────
+# ── DXC colour tokens (light theme) ───────────────────────────────────────────
 DXC_PURPLE      = "#6D2077"
 DXC_PURPLE_LITE = "#9B26AF"
-DXC_PURPLE_DIM  = "#3D1142"
-DXC_BLACK       = "#0D0D0D"
-DXC_SURFACE     = "#161616"
-DXC_SURFACE2    = "#1F1F1F"
-DXC_BORDER      = "#2E2E2E"
-DXC_GREY        = "#6D7278"
-DXC_GREY_LIGHT  = "#A0A4A8"
-DXC_TEXT        = "#E8E8E8"
-DXC_TEXT_DIM    = "#8A8A8A"
+DXC_PURPLE_DIM  = "#EDE0F0"
+DXC_BLACK       = "#FFFFFF"       # main background
+DXC_SURFACE     = "#F5F4F7"       # sidebar / card background
+DXC_SURFACE2    = "#FFFFFF"       # input / widget background
+DXC_BORDER      = "#E0D9E6"       # borders
+DXC_GREY        = "#5A5A6A"       # muted text
+DXC_GREY_LIGHT  = "#8A8A9A"       # very muted text
+DXC_TEXT        = "#1A1A2E"       # primary text
+DXC_TEXT_DIM    = "#6D6D80"       # secondary text
 DXC_WHITE       = "#FFFFFF"
 
 st.markdown(f"""
@@ -83,7 +83,7 @@ section[data-testid="stSidebar"] > div {{
 .sidebar-brand {{
     font-size: 0.75rem;
     font-weight: 700;
-    color: {DXC_PURPLE_LITE} !important;
+    color: {DXC_PURPLE} !important;
     text-transform: uppercase;
     letter-spacing: 1.6px;
     padding-bottom: 12px;
@@ -99,10 +99,10 @@ section[data-testid="stSidebar"] > div {{
 
 /* ── KPI card ── */
 .kpi-card {{
-    background-color: {DXC_SURFACE2};
+    background-color: {DXC_SURFACE};
     border: 1px solid {DXC_BORDER};
     border-top: 3px solid {DXC_PURPLE};
-    border-radius: 4px;
+    border-radius: 6px;
     padding: 20px 16px 16px 16px;
     text-align: center;
     margin-bottom: 4px;
@@ -112,18 +112,18 @@ section[data-testid="stSidebar"] > div {{
     font-weight: 700;
     margin: 0 0 6px 0;
     line-height: 1;
-    color: {DXC_WHITE};
+    color: {DXC_TEXT};
 }}
 .kpi-label {{
     font-size: 0.68rem;
-    color: {DXC_GREY_LIGHT};
+    color: {DXC_GREY};
     text-transform: uppercase;
     letter-spacing: 1.4px;
     margin: 0;
 }}
 .kpi-sub {{
     font-size: 0.72rem;
-    color: {DXC_GREY};
+    color: {DXC_GREY_LIGHT};
     margin-top: 6px;
 }}
 
@@ -146,14 +146,14 @@ hr {{ border-color: {DXC_BORDER} !important; }}
 .stTabs [data-baseweb="tab-list"] {{
     gap: 2px;
     background-color: {DXC_SURFACE};
-    border-bottom: 1px solid {DXC_BORDER};
+    border-bottom: 2px solid {DXC_BORDER};
     padding: 0 4px;
 }}
 .stTabs [data-baseweb="tab"] {{
     background: transparent;
     border-radius: 0;
     padding: 10px 20px;
-    color: {DXC_GREY_LIGHT};
+    color: {DXC_GREY};
     font-size: 0.82rem;
     font-weight: 500;
     letter-spacing: 0.5px;
@@ -162,7 +162,7 @@ hr {{ border-color: {DXC_BORDER} !important; }}
 }}
 .stTabs [aria-selected="true"] {{
     background: transparent !important;
-    color: {DXC_WHITE} !important;
+    color: {DXC_PURPLE} !important;
     border-bottom: 2px solid {DXC_PURPLE} !important;
 }}
 
@@ -189,25 +189,25 @@ hr {{ border-color: {DXC_BORDER} !important; }}
 /* ── Expander ── */
 [data-testid="stExpander"] {{
     border: 1px solid {DXC_BORDER} !important;
-    border-radius: 4px !important;
-    background-color: {DXC_SURFACE2} !important;
+    border-radius: 6px !important;
+    background-color: {DXC_SURFACE} !important;
 }}
 
 /* ── Dataframe ── */
 [data-testid="stDataFrame"] {{
     border: 1px solid {DXC_BORDER};
-    border-radius: 4px;
+    border-radius: 6px;
 }}
 
 /* ── Page title ── */
 .page-title {{
     font-size: 1.5rem;
     font-weight: 700;
-    color: {DXC_WHITE};
+    color: {DXC_PURPLE};
     letter-spacing: 0.5px;
     margin-bottom: 0;
     padding-bottom: 12px;
-    border-bottom: 1px solid {DXC_BORDER};
+    border-bottom: 2px solid {DXC_PURPLE};
 }}
 .page-subtitle {{
     font-size: 0.8rem;
@@ -234,6 +234,8 @@ CHART_THEME = dict(
     font=dict(color=DXC_TEXT, size=11, family="Segoe UI, sans-serif"),
     margin=dict(t=10, b=10, l=10, r=10),
 )
+# Light-mode grid colour used in per-chart xaxis/yaxis overrides
+_GRID = "#E8E2EE"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -425,7 +427,7 @@ def load_data() -> pd.DataFrame:
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-def kpi_card(label: str, value, color: str = "#FFFFFF", sub: str = ""):
+def kpi_card(label: str, value, color: str = "#1A1A2E", sub: str = ""):
     sub_html = f'<p class="kpi-sub">{sub}</p>' if sub else ""
     st.markdown(f"""
     <div class="kpi-card">
@@ -464,8 +466,8 @@ def sprint_group(s) -> str | None:
 
 
 def chart(fig, **kwargs):
-    _axis = dict(gridcolor=DXC_BORDER, linecolor=DXC_BORDER,
-                 zerolinecolor=DXC_BORDER, tickfont=dict(color=DXC_GREY_LIGHT))
+    _axis = dict(gridcolor=_GRID, linecolor=DXC_BORDER,
+                 zerolinecolor=DXC_BORDER, tickfont=dict(color=DXC_GREY))
     fig.update_layout(
         **CHART_THEME,
         legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=DXC_TEXT)),
@@ -753,7 +755,7 @@ with tab_trends:
                   color_discrete_sequence=[DXC_PURPLE],
                   markers=True)
     fig.update_layout(
-                      yaxis=dict(title="Issues", gridcolor=DXC_BORDER))
+                      yaxis=dict(title="Issues", gridcolor=_GRID))
     chart(fig)
 
     c1, c2 = st.columns(2)
@@ -1117,7 +1119,7 @@ with tab_burndown:
             hoverinfo="skip", name="Deviation", showlegend=True,
         ))
         fig.update_layout(
-            yaxis=dict(title=f"Remaining ({unit})", gridcolor=DXC_BORDER),
+            yaxis=dict(title=f"Remaining ({unit})", gridcolor=_GRID),
             hovermode="x unified", **CHART_THEME,
         )
         chart(fig)
@@ -1342,7 +1344,7 @@ with tab_backlog:
                                    xanchor="left", yanchor="top")
         _fig_bl.update_layout(**{
             **CHART_THEME, "height": 420,
-            "yaxis": dict(title="Open Incidents", gridcolor=DXC_BORDER),
+            "yaxis": dict(title="Open Incidents", gridcolor=_GRID),
             "hovermode": "x unified",
             "legend": dict(orientation="h", y=1.05, x=0),
         })
@@ -1363,7 +1365,7 @@ with tab_backlog:
         ))
         _fig_oc.update_layout(**{
             **CHART_THEME, "barmode": "relative", "height": 280,
-            "yaxis": dict(title="Tickets", gridcolor=DXC_BORDER),
+            "yaxis": dict(title="Tickets", gridcolor=_GRID),
             "hovermode": "x unified",
             "legend": dict(orientation="h", y=1.05, x=0),
         })
@@ -1394,7 +1396,7 @@ with tab_backlog:
                 text=_open_by["open"], textposition="outside",
             ))
             _fig_op.update_layout(**{**CHART_THEME, "height": 440,
-                                    "xaxis": dict(gridcolor=DXC_BORDER),
+                                    "xaxis": dict(gridcolor=_GRID),
                                     "yaxis": dict(autorange="reversed"),
                                     "margin": dict(t=10, b=10, l=10, r=60)})
             chart(_fig_op)
@@ -1409,7 +1411,7 @@ with tab_backlog:
                 text=_closed_by["closed"], textposition="outside",
             ))
             _fig_cl.update_layout(**{**CHART_THEME, "height": 440,
-                                    "xaxis": dict(gridcolor=DXC_BORDER),
+                                    "xaxis": dict(gridcolor=_GRID),
                                     "yaxis": dict(autorange="reversed"),
                                     "margin": dict(t=10, b=10, l=10, r=60)})
             chart(_fig_cl)
@@ -1433,7 +1435,7 @@ with tab_backlog:
                 text=_age_c["count"], textposition="outside",
             ))
             _fig_age.update_layout(**{**CHART_THEME, "height": 300,
-                                     "yaxis": dict(gridcolor=DXC_BORDER)})
+                                     "yaxis": dict(gridcolor=_GRID)})
             chart(_fig_age)
 
         with _col_prio:
@@ -1448,7 +1450,7 @@ with tab_backlog:
                 text=_prio_c["count"], textposition="outside",
             ))
             _fig_pr.update_layout(**{**CHART_THEME, "height": 300,
-                                    "xaxis": dict(gridcolor=DXC_BORDER),
+                                    "xaxis": dict(gridcolor=_GRID),
                                     "margin": dict(t=10, b=10, l=10, r=60)})
             chart(_fig_pr)
 
@@ -1691,7 +1693,7 @@ with tab_team:
         **CHART_THEME,
         "barmode": "overlay",
         "height": max(380, len(_sorted) * 42),
-        "xaxis": dict(title="JH / Story Points", gridcolor=DXC_BORDER),
+        "xaxis": dict(title="JH / Story Points", gridcolor=_GRID),
         "yaxis": dict(tickfont=dict(size=12)),
         "legend": dict(orientation="h", y=1.04, x=0),
         "margin": dict(t=10, b=10, l=10, r=220),
@@ -1729,7 +1731,7 @@ with tab_team:
             textposition="outside",
         ))
         _sf.update_layout(**{**CHART_THEME, "barmode": "overlay", "height": 320,
-                             "xaxis": dict(gridcolor=DXC_BORDER)})
+                             "xaxis": dict(gridcolor=_GRID)})
         chart(_sf)
 
     with _col_b:
