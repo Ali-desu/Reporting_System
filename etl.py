@@ -28,11 +28,11 @@ def build_engine(host: str, port: int, name: str, user: str, password: str):
 def get_engine():
     """CLI use only — reads credentials from .env."""
     return build_engine(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", "4306")),
-        name=os.getenv("DB_NAME", "mydb"),
-        user=os.getenv("DB_USER", "user"),
-        password=os.getenv("DB_PASSWORD", "userpassword"),
+        host=os.getenv("DB_HOST", "mysql-6047a7e-uca-0f17.e.aivencloud.com"),
+        port=int(os.getenv("DB_PORT", "25768")),
+        name=os.getenv("DB_NAME", "ReportingSystemDB"),
+        user=os.getenv("DB_USER", "avnadmin"),
+        password=os.getenv("DB_PASSWORD", ""),
     )
 
 # Columns we care about: original name → DB column name

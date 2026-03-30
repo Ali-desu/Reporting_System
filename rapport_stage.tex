@@ -1,0 +1,593 @@
+\documentclass[12pt, a4paper]{report}
+
+% ── Encodage et langue ──────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+% ── Mise en page ────────────────────────────────────────────────────────────
+\usepackage[top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ── Typographie ─────────────────────────────────────────────────────────────
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ── Couleurs et graphiques ──────────────────────────────────────────────────
+\usepackage[dvipsnames]{xcolor}
+\definecolor{dxcpurple}{HTML}{6D2077}
+\definecolor{dxcpurplelite}{HTML}{9B26AF}
+\definecolor{dxcgrey}{HTML}{6D7278}
+\definecolor{lightgrey}{HTML}{F5F5F5}
+
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% ── Tableaux ────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{colortbl}
+
+% ── Listes et boîtes ────────────────────────────────────────────────────────
+\usepackage{enumitem}
+\usepackage{mdframed}
+
+% ── Liens et références ─────────────────────────────────────────────────────
+\usepackage[colorlinks=true, linkcolor=dxcpurple, urlcolor=dxcpurplelite, citecolor=dxcgrey]{hyperref}
+
+% ── En-têtes et pieds de page ───────────────────────────────────────────────
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{dxcgrey}{Rapport de Stage — DXC Technology}}
+\fancyhead[R]{\small\textcolor{dxcgrey}{El Adnani Ali}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Style des titres de chapitres ───────────────────────────────────────────
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\Large\bfseries\color{dxcpurple}}
+  {\chaptertitlename\ \thechapter}{10pt}{\Huge}
+\titleformat{\section}
+  {\normalfont\large\bfseries\color{dxcpurple}}
+  {\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\normalsize\bfseries\color{dxcgrey}}
+  {\thesubsection}{1em}{}
+
+% ── Boîte info ──────────────────────────────────────────────────────────────
+\newmdenv[
+  linecolor=dxcpurple,
+  backgroundcolor=lightgrey,
+  linewidth=2pt,
+  leftline=true, rightline=false, topline=false, bottomline=false,
+  innerleftmargin=10pt, innerrightmargin=10pt,
+  innertopmargin=8pt, innerbottommargin=8pt,
+]{infobox}
+
+% ════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── PAGE DE TITRE ───────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+
+  % Logo / en-tête institution
+  \vspace*{1cm}
+  {\Large \textbf{École Nationale des Sciences Appliquées}\par}
+  {\large Marrakech\par}
+  \vspace{0.3cm}
+  \textcolor{dxcgrey}{\rule{\linewidth}{0.4pt}}
+  \vspace{0.5cm}
+
+  {\large Rapport de Stage de Fin d'Études\par}
+  \vspace{1.5cm}
+
+  % Titre principal
+  {\color{dxcpurple}\rule{\linewidth}{1.5pt}}\vspace{0.4cm}
+  {\LARGE \textbf{Conception et Développement d'un Système\\[0.4em]
+  de Reporting Analytique pour le Service Desk}\par}
+  \vspace{0.3cm}
+  {\color{dxcpurple}\rule{\linewidth}{1.5pt}}
+
+  \vspace{1.5cm}
+
+  % Infos stage
+  \begin{tabular}{ll}
+    \textbf{Entreprise d'accueil :} & \textbf{DXC Technology} \\[0.4em]
+    \textbf{Encadrante entreprise :} & Mme. Meryem El Boumehdi \\[0.4em]
+    \textbf{Réalisé par :} & El Adnani Ali \\[0.4em]
+    \textbf{Filière :} & Génie Informatique / Data \\[0.4em]
+    \textbf{Durée du stage :} & 4 mois (du 2 février 2026) \\[0.4em]
+    \textbf{Année universitaire :} & 2025 -- 2026 \\
+  \end{tabular}
+
+  \vfill
+
+  % Bas de page
+  \textcolor{dxcgrey}{\rule{\linewidth}{0.4pt}}\vspace{0.3cm}
+  {\small\textcolor{dxcgrey}{ENSA Marrakech --- DXC Technology --- 2026}\par}
+
+\end{titlepage}
+
+% ── REMERCIEMENTS ────────────────────────────────────────────────────────────
+\chapter*{Remerciements}
+\addcontentsline{toc}{chapter}{Remerciements}
+
+Je tiens à exprimer ma profonde gratitude à toutes les personnes qui ont contribué, de près ou de loin, au bon déroulement de ce stage et à la réalisation de ce rapport.
+
+Je remercie tout d'abord \textbf{Mme. Meryem El Boumehdi}, mon encadrante au sein de DXC Technology, pour sa disponibilité, ses conseils avisés et la confiance qu'elle m'a accordée tout au long de cette expérience professionnelle.
+
+Je remercie également l'ensemble de l'équipe DXC Technology pour leur accueil chaleureux et leur soutien quotidien, ainsi que pour les échanges enrichissants qui m'ont permis de mieux appréhender les réalités du monde professionnel dans le domaine de la data.
+
+Enfin, je remercie le corps enseignant de l'\textbf{École Nationale des Sciences Appliquées de Marrakech} pour la formation solide qui m'a permis d'aborder ce stage avec les compétences nécessaires.
+
+\newpage
+
+% ── RÉSUMÉ ──────────────────────────────────────────────────────────────────
+\chapter*{Résumé}
+\addcontentsline{toc}{chapter}{Résumé}
+
+Dans le cadre de mon stage au sein de \textbf{DXC Technology}, j'ai été chargé de concevoir et de développer un système de reporting analytique destiné à l'équipe service desk. L'objectif principal était de transformer des données brutes extraites de l'outil de gestion de tickets \textbf{Jira} en tableaux de bord interactifs, permettant un suivi en temps réel des indicateurs de performance (KPIs), du respect des SLA et de l'avancement des sprints de livraison.
+
+La solution développée s'articule autour d'un pipeline ETL en Python, d'une base de données MySQL hébergée dans le cloud (Aiven), d'un tableau de bord Streamlit, d'un espace de reporting Power BI, et d'un agent intelligent basé sur l'API Claude d'Anthropic permettant d'interroger les données en langage naturel.
+
+\textbf{Mots-clés :} Reporting, Jira, ETL, MySQL, Streamlit, Power BI, Analyse de données, KPI, SLA, Sprint Burndown, Intelligence Artificielle.
+
+\vspace{1cm}
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+As part of my internship at \textbf{DXC Technology}, I was tasked with designing and developing an analytical reporting system for the service desk team. The main goal was to transform raw data extracted from the \textbf{Jira} ticketing tool into interactive dashboards, enabling real-time monitoring of key performance indicators (KPIs), SLA compliance, and sprint delivery progress.
+
+The solution is built around a Python ETL pipeline, a cloud-hosted MySQL database (Aiven), a Streamlit dashboard, a Power BI reporting space, and an AI agent powered by Anthropic's Claude API, enabling natural language queries over the data.
+
+\textbf{Keywords:} Reporting, Jira, ETL, MySQL, Streamlit, Power BI, Data Analysis, KPI, SLA, Sprint Burndown, Artificial Intelligence.
+
+\newpage
+
+% ── TABLE DES MATIÈRES ───────────────────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ════════════════════════════════════════════════════════════════════════════
+% INTRODUCTION GÉNÉRALE
+% ════════════════════════════════════════════════════════════════════════════
+\chapter*{Introduction Générale}
+\addcontentsline{toc}{chapter}{Introduction Générale}
+
+Dans un contexte où les entreprises de services informatiques gèrent quotidiennement des centaines de tickets d'incidents, de demandes et d'améliorations, la capacité à exploiter efficacement ces données constitue un avantage concurrentiel majeur. La transformation de volumes importants de données opérationnelles en informations décisionnelles claires et actionnables est au cœur des enjeux modernes de la data analytique.
+
+C'est dans cette optique que s'inscrit le présent stage réalisé au sein de \textbf{DXC Technology}, entreprise internationale leader dans les services numériques et technologiques. L'équipe service desk de DXC gère un flux continu de tickets via l'outil \textbf{Jira}, générant des données riches et variées, mais jusqu'alors exploitées de manière manuelle et fragmentée.
+
+Ce rapport présente la démarche adoptée pour concevoir et développer une solution de reporting complète, couvrant l'ensemble de la chaîne de valeur des données~: de l'extraction depuis Jira jusqu'à la visualisation dans des tableaux de bord interactifs, en passant par la transformation, le stockage et l'analyse automatisée.
+
+Le document est organisé comme suit~:
+\begin{itemize}[leftmargin=2em]
+    \item Le \textbf{Chapitre 1} présente le contexte général, l'entreprise d'accueil et le cadre du stage.
+    \item Le \textbf{Chapitre 2} expose la problématique identifiée et les besoins auxquels le projet répond.
+    \item Le \textbf{Chapitre 3} détaille les objectifs du projet et le cahier des charges fonctionnel.
+    \item Le \textbf{Chapitre 4} décrit les technologies et outils choisis pour réaliser la solution.
+    \item Le \textbf{Chapitre 5} présente l'architecture technique et les composants développés.
+    \item Une \textbf{conclusion} clôt le rapport en dressant un bilan et des perspectives d'évolution.
+\end{itemize}
+
+% ════════════════════════════════════════════════════════════════════════════
+% CHAPITRE 1 : CONTEXTE ET PRÉSENTATION
+% ════════════════════════════════════════════════════════════════════════════
+\chapter{Contexte et Présentation}
+
+\section{Présentation de l'entreprise d'accueil}
+
+\subsection{DXC Technology}
+
+\textbf{DXC Technology} est une entreprise multinationale de services informatiques, née en 2017 de la fusion entre \textit{Hewlett Packard Enterprise Services} et \textit{Computer Sciences Corporation (CSC)}. Elle emploie plus de 130\,000 collaborateurs dans plus de 70 pays et accompagne des entreprises du Fortune 500 dans leur transformation numérique.
+
+DXC Technology opère dans plusieurs domaines~:
+\begin{itemize}[leftmargin=2em]
+    \item Gestion des infrastructures informatiques et cloud
+    \item Sécurité des systèmes d'information
+    \item Applications d'entreprise (ERP, CRM)
+    \item Analytique et intelligence artificielle
+    \item Services de modernisation des SI
+\end{itemize}
+
+\begin{infobox}
+\textbf{Chiffres clés DXC Technology (2024)}\\
+Chiffre d'affaires~: environ \$13,7 milliards USD\\
+Employés~: plus de 130\,000 dans 70+ pays\\
+Clients~: entreprises du Fortune 500 et secteur public
+\end{infobox}
+
+\subsection{Contexte du stage}
+
+Ce stage s'inscrit dans le cadre d'une mission d'analyse de données au sein d'une équipe opérationnelle de DXC. L'équipe en question est responsable d'un \textbf{service desk} gérant des incidents et demandes de support pour des clients grands comptes. Elle utilise \textbf{Jira} comme outil central de ticketing, ce qui génère quotidiennement un volume important de données structurées sur les incidents, les performances des équipes et le respect des engagements contractuels.
+
+\section{Cadre du stage}
+
+\begin{tabular}{ll}
+    \toprule
+    \textbf{Élément} & \textbf{Détail} \\
+    \midrule
+    Stagiaire & El Adnani Ali \\
+    École & ENSA Marrakech \\
+    Encadrante & Mme. Meryem El Boumehdi \\
+    Durée & 4 mois (extensible à 6 mois) \\
+    Date de début & 2 février 2026 \\
+    Rôle & Analyste de données (Data Analyst) \\
+    Domaine & Reporting, ETL, Visualisation de données \\
+    \bottomrule
+\end{tabular}
+
+% ════════════════════════════════════════════════════════════════════════════
+% CHAPITRE 2 : PROBLÉMATIQUE
+% ════════════════════════════════════════════════════════════════════════════
+\chapter{Problématique}
+
+\section{État des lieux initial}
+
+Avant le démarrage de ce projet, le suivi des activités du service desk reposait entièrement sur un processus \textbf{manuel et fragmenté}. Les données issues de Jira étaient exportées périodiquement sous forme de fichiers Excel par les membres de l'équipe. Ces fichiers contenaient plusieurs milliers de lignes couvrant des informations telles que~:
+
+\begin{itemize}[leftmargin=2em]
+    \item Le type, la priorité et le statut de chaque ticket
+    \item Les dates de création, de résolution et de clôture
+    \item Les informations sur les SLA (\textit{Service Level Agreements}) et leur respect
+    \item Les indicateurs KPI de temps de traitement
+    \item L'assignation des tickets aux membres de l'équipe
+    \item Les informations de sprint et de planification de livraison
+\end{itemize}
+
+\section{Identification des problèmes}
+
+\subsection{Manque de visibilité en temps réel}
+
+Le processus d'exportation manuelle depuis Jira impliquait un décalage systématique entre la réalité opérationnelle et les informations disponibles pour la prise de décision. Les managers et chefs de projet ne disposaient pas d'une vue actualisée de l'état du service desk, rendant difficile toute réaction rapide face à une dégradation des performances ou une augmentation critique des incidents.
+
+\subsection{Processus chronophage et source d'erreurs}
+
+La consolidation des fichiers Excel, le calcul manuel des KPIs et la mise à jour des tableaux de bord existants mobilisaient un temps considérable, au détriment d'activités à plus forte valeur ajoutée. Par ailleurs, la manipulation manuelle de fichiers volumineux (plus de 8\,000 lignes) introduisait des risques d'erreurs humaines dans les calculs et les agrégations.
+
+\subsection{Absence de standardisation}
+
+Les données brutes issues de Jira présentaient des incohérences de format~: valeurs de temps exprimées sous forme textuelle (par exemple \texttt{"998h 31m"}), noms de sprints non normalisés (plusieurs variantes pour un même sprint), champs dates mal typés, et valeurs manquantes non traitées. Sans pipeline de nettoyage automatisé, chaque analyse nécessitait un prétraitement manuel systématique.
+
+\subsection{Impossibilité d'analyser les tendances}
+
+Le recours à des fichiers Excel ponctuels ne permettait pas de conserver un historique structuré des données ni d'effectuer des analyses temporelles fiables (évolution mensuelle du volume d'incidents, tendances de conformité SLA, comparaison inter-sprints). La capacité d'analyse se limitait à l'instantané du dernier export.
+
+\subsection{Suivi de sprint insuffisant}
+
+L'équipe livrait ses développements selon un modèle de sprints planifiés. Or, il n'existait aucun outil permettant de suivre en temps réel l'avancement d'un sprint par rapport à son scope engagé, d'identifier les tickets portés d'un sprint à l'autre (\textit{carried-over}), ni de distinguer les tickets hors-scope présents dans Jira. Ce manque de visibilité rendait difficile le pilotage des livraisons et la communication avec les parties prenantes.
+
+\section{Synthèse de la problématique}
+
+\begin{infobox}
+\textbf{Problématique centrale du projet}
+
+\medskip
+Comment concevoir et implémenter un système de reporting automatisé, fiable et accessible, permettant à l'équipe service desk de DXC Technology de transformer ses données Jira brutes en indicateurs de performance exploitables en temps réel, et d'assurer un suivi précis des engagements de livraison par sprint~?
+\end{infobox}
+
+Cette problématique soulève plusieurs questions subsidiaires~:
+
+\begin{itemize}[leftmargin=2em]
+    \item Comment automatiser l'ingestion et le nettoyage des données issues de Jira de façon robuste et répétable~?
+    \item Quel modèle de données adopter pour stocker efficacement des tickets hétérogènes et permettre des analyses multidimensionnelles~?
+    \item Comment rendre les tableaux de bord accessibles à des utilisateurs non techniques~?
+    \item Comment garantir la cohérence entre le scope engagé dans le fichier de planification et les données réelles de Jira~?
+    \item Est-il possible d'intégrer une couche d'intelligence artificielle pour permettre des requêtes en langage naturel sur les données~?
+\end{itemize}
+
+% ════════════════════════════════════════════════════════════════════════════
+% CHAPITRE 3 : OBJECTIFS ET CAHIER DES CHARGES
+% ════════════════════════════════════════════════════════════════════════════
+\chapter{Objectifs et Cahier des Charges}
+
+\section{Objectif général}
+
+L'objectif général du projet est de concevoir et développer un \textbf{système de reporting analytique bout-en-bout} pour le service desk de DXC Technology, depuis l'extraction des données brutes de Jira jusqu'à leur restitution sous forme de tableaux de bord interactifs et d'analyses automatisées.
+
+\section{Objectifs spécifiques}
+
+\subsection{Objectif 1 — Pipeline ETL automatisé}
+
+Développer un pipeline ETL (\textit{Extract, Transform, Load}) en Python capable de~:
+\begin{itemize}[leftmargin=2em]
+    \item Lire les exports Excel générés depuis Jira
+    \item Nettoyer et normaliser les données (formats de dates, indicateurs KPI, sprints)
+    \item Calculer des colonnes dérivées utiles à l'analyse (jours de résolution, conformité SLA, regroupement par mois)
+    \item Charger les données dans une base de données relationnelle cloud
+    \item Supporter les mises à jour incrémentielles sans doublons (\textit{upsert})
+\end{itemize}
+
+\subsection{Objectif 2 — Tableau de bord Streamlit}
+
+Développer un tableau de bord interactif en Python (Streamlit) couvrant~:
+\begin{itemize}[leftmargin=2em]
+    \item Une vue d'ensemble (volume de tickets, types, priorités, statuts)
+    \item Une analyse des tendances temporelles (évolution mensuelle, hebdomadaire)
+    \item Une analyse par équipe et par assigné (charge de travail, taux de résolution)
+    \item Un suivi des SLA et des KPIs contractuels
+    \item Un tableau de bord de burndown par sprint basé sur le scope engagé
+\end{itemize}
+
+\subsection{Objectif 3 — Reporting Power BI}
+
+Mettre en place un espace de reporting dans \textbf{Power BI} connecté directement à la base de données cloud, permettant~:
+\begin{itemize}[leftmargin=2em]
+    \item La création de rapports visuels avancés avec filtres croisés
+    \item Le suivi des KPIs par des utilisateurs métier non techniques
+    \item La publication et le partage de rapports au sein de l'organisation
+\end{itemize}
+
+\subsection{Objectif 4 — Agent IA en langage naturel}
+
+Intégrer un agent intelligent basé sur l'API Claude (Anthropic) permettant aux utilisateurs d'interroger la base de données en langage naturel, sans nécessiter de connaissances SQL, pour des requêtes telles que~:
+\begin{itemize}[leftmargin=2em]
+    \item «~Combien de tickets critiques sont encore ouverts~?~»
+    \item «~Quel est le taux de conformité SLA ce mois-ci~?~»
+    \item «~Qui a résolu le plus d'incidents cette semaine~?~»
+    \item «~Le sprint R25 est-il en bonne voie pour être livré à temps~?~»
+\end{itemize}
+
+\subsection{Objectif 5 — Suivi du scope de sprint}
+
+Mettre en place un mécanisme de suivi précis du scope de sprint engagé, à partir d'un fichier de planification (\textit{Release Lifecycle}), permettant de~:
+\begin{itemize}[leftmargin=2em]
+    \item Identifier les tickets engagés dans chaque sprint de livraison
+    \item Construire un graphique de burndown basé uniquement sur les tickets du scope
+    \item Détecter et visualiser les tickets hors-scope présents dans Jira
+    \item Identifier les tickets portés d'un sprint précédent (\textit{carried-over})
+\end{itemize}
+
+\section{Cahier des charges fonctionnel}
+
+\begin{longtable}{p{0.3\linewidth} p{0.55\linewidth} p{0.08\linewidth}}
+    \toprule
+    \textbf{Fonctionnalité} & \textbf{Description} & \textbf{Priorité} \\
+    \midrule
+    \endhead
+    Chargement des données & Import de fichiers Excel Jira avec nettoyage automatique & P1 \\
+    \midrule
+    Stockage cloud & Base de données MySQL hébergée, accessible en permanence & P1 \\
+    \midrule
+    Dashboard Vue d'ensemble & KPIs globaux, répartition par type/priorité/statut & P1 \\
+    \midrule
+    Analyse des tendances & Évolution temporelle des volumes et de la résolution & P1 \\
+    \midrule
+    Analyse équipe & Performance par assigné, taux de résolution & P2 \\
+    \midrule
+    Suivi SLA & Taux de conformité, raisons de dépassement & P1 \\
+    \midrule
+    KPI contractuels & Temps de résolution, de réponse, d'analyse, d'assistance & P1 \\
+    \midrule
+    Burndown de sprint & Graphique basé sur le scope engagé, courbe idéale vs réelle & P1 \\
+    \midrule
+    Tickets hors-scope & Détection et affichage des tickets R25 hors planification & P2 \\
+    \midrule
+    Tickets carried-over & Identification des tickets glissés depuis un sprint précédent & P2 \\
+    \midrule
+    Agent IA & Réponses en langage naturel via requêtes SQL auto-générées & P2 \\
+    \midrule
+    Reporting Power BI & Tableaux de bord publiables connectés à la base cloud & P2 \\
+    \midrule
+    Mise à jour des données & Upload d'un nouveau fichier Excel sans perte de l'historique & P1 \\
+    \bottomrule
+    \caption{Cahier des charges fonctionnel — P1~: prioritaire, P2~: secondaire}
+\end{longtable}
+
+\section{Contraintes techniques}
+
+\begin{itemize}[leftmargin=2em]
+    \item La solution doit être \textbf{accessible en ligne} sans installation locale pour les utilisateurs finaux.
+    \item Le pipeline ETL doit gérer les \textbf{exports incomplets ou partiels} (colonnes manquantes, fichiers de taille variable).
+    \item La base de données doit être \textbf{sécurisée} (connexion SSL, credentials chiffrés).
+    \item L'agent IA doit être \textbf{limité aux requêtes SELECT} pour éviter toute modification accidentelle des données.
+    \item La solution doit être \textbf{maintenable} par une personne non spécialiste du développement.
+\end{itemize}
+
+% ════════════════════════════════════════════════════════════════════════════
+% CHAPITRE 4 : TECHNOLOGIES ET OUTILS
+% ════════════════════════════════════════════════════════════════════════════
+\chapter{Technologies et Outils}
+
+\section{Vue d'ensemble de la stack technique}
+
+La solution repose sur un ensemble de technologies open source et de services cloud, choisis pour leur robustesse, leur facilité d'intégration et leur adéquation aux besoins identifiés.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{p{0.25\linewidth} p{0.25\linewidth} p{0.4\linewidth}}
+    \toprule
+    \textbf{Couche} & \textbf{Outil / Technologie} & \textbf{Rôle} \\
+    \midrule
+    Source de données & Jira (Atlassian) & Gestion des tickets, export des données \\
+    \midrule
+    ETL & Python (pandas) & Extraction, nettoyage, transformation \\
+    \midrule
+    Stockage & MySQL 8 / Aiven Cloud & Base de données relationnelle cloud \\
+    \midrule
+    Dashboard & Streamlit & Interface web interactive en Python \\
+    \midrule
+    Reporting & Power BI Desktop & Rapports visuels avancés \\
+    \midrule
+    Visualisation & Plotly & Graphiques interactifs dans Streamlit \\
+    \midrule
+    Agent IA & Claude API (Anthropic) & Requêtes en langage naturel \\
+    \midrule
+    ORM / Connexion DB & SQLAlchemy + PyMySQL & Connexion Python vers MySQL \\
+    \midrule
+    Déploiement & Streamlit Community Cloud & Hébergement de l'application web \\
+    \bottomrule
+\end{tabular}
+\caption{Stack technique du projet}
+\end{table}
+
+\section{Jira}
+
+\textbf{Jira} (Atlassian) est l'outil de gestion de tickets utilisé par l'équipe service desk. Il centralise l'ensemble des incidents, demandes de service et améliorations. Les données de Jira constituent la source principale du système de reporting. Elles sont exportées sous forme de fichiers Excel structurés, couvrant des champs tels que la clé du ticket, le type, la priorité, le statut, les dates, les assignés, les informations de sprint et les indicateurs KPI.
+
+\section{Python et le pipeline ETL}
+
+Le langage \textbf{Python} constitue le cœur technique du projet. La bibliothèque \textbf{pandas} est utilisée pour toutes les opérations de traitement de données~: lecture des fichiers Excel, normalisation des formats, calcul des colonnes dérivées et chargement en base.
+
+\section{MySQL et Aiven Cloud}
+
+La base de données \textbf{MySQL 8} hébergée sur \textbf{Aiven Cloud} sert de référentiel central pour les données nettoyées. Ce choix permet un accès simultané depuis Streamlit (application web) et Power BI (outil de reporting), tout en garantissant une disponibilité permanente et une connexion sécurisée par SSL.
+
+\section{Streamlit}
+
+\textbf{Streamlit} est un framework Python permettant de créer des applications web interactives sans écrire de code HTML ou JavaScript. Il offre une expérience de développement rapide et permet de partager facilement des tableaux de bord avec des utilisateurs non techniques via une URL publique.
+
+\section{Power BI}
+
+\textbf{Power BI} est l'outil de reporting de Microsoft, utilisé ici pour créer des rapports visuels avancés directement connectés à la base MySQL cloud. Il permet la création de mesures DAX, de graphiques complexes et le partage institutionnel de rapports au sein de l'organisation DXC.
+
+\section{Agent IA — Claude (Anthropic)}
+
+L'agent intelligent est construit sur le modèle de langage \textbf{Claude} d'Anthropic, via son API. Il traduit les questions en langage naturel en requêtes SQL, les exécute sur la base de données et restitue les résultats sous forme de réponses textuelles claires. L'agent est limité aux instructions \texttt{SELECT} pour garantir l'intégrité des données.
+
+% ════════════════════════════════════════════════════════════════════════════
+% CHAPITRE 5 : ARCHITECTURE ET SOLUTION
+% ════════════════════════════════════════════════════════════════════════════
+\chapter{Architecture de la Solution}
+
+\section{Architecture globale}
+
+La solution adoptée suit une architecture en couches, articulant~:
+
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{Couche source}~: Jira (exports Excel)
+    \item \textbf{Couche ETL}~: Pipeline Python de nettoyage et chargement
+    \item \textbf{Couche stockage}~: Base MySQL cloud (Aiven)
+    \item \textbf{Couche présentation}~: Streamlit (dashboard web) + Power BI (reporting)
+    \item \textbf{Couche intelligence}~: Agent IA en langage naturel
+\end{enumerate}
+
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=4pt, minimum width=3.5cm, minimum height=1cm,
+              fill=lightgrey, text centered, font=\small},
+  arrow/.style={->, thick, color=dxcpurple},
+]
+
+% Source
+\node[box, fill=dxcpurple!15] (jira) at (0,0) {Jira\\(Export Excel)};
+
+% ETL
+\node[box, fill=dxcpurple!25] (etl) at (4,0) {Pipeline ETL\\(Python / pandas)};
+
+% DB
+\node[box, fill=dxcpurple!35] (db) at (8,0) {MySQL Cloud\\(Aiven)};
+
+% Présentation
+\node[box, fill=dxcpurple!20] (streamlit) at (11, 1.8) {Streamlit\\Dashboard};
+\node[box, fill=dxcpurple!20] (powerbi)   at (11,-1.8) {Power BI\\Reporting};
+\node[box, fill=dxcpurple!20] (agent)     at (11, 0)   {Agent IA\\(Claude API)};
+
+% Flèches
+\draw[arrow] (jira)     -- (etl);
+\draw[arrow] (etl)      -- (db);
+\draw[arrow] (db)       -- (streamlit);
+\draw[arrow] (db)       -- (agent);
+\draw[arrow] (db)       -- (powerbi);
+
+\end{tikzpicture}
+\end{center}
+\vspace{0.5em}
+\begin{center}
+{\small\textcolor{dxcgrey}{\textit{Figure 5.1 --- Architecture globale du système de reporting}}}
+\end{center}
+
+\section{Pipeline ETL}
+
+Le module ETL (\texttt{etl.py}) réalise les opérations suivantes~:
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Extraction}~: Lecture du fichier Excel Jira avec sélection et renommage des colonnes pertinentes parmi les 50+ disponibles.
+    \item \textbf{Transformation}~:
+    \begin{itemize}
+        \item Normalisation des chaînes de caractères (espaces, valeurs nulles)
+        \item Conversion des formats de date
+        \item Conversion des indicateurs KPI de format textuel (\texttt{"998h 31m"}) en minutes numériques
+        \item Calcul des colonnes dérivées~: \texttt{is\_resolved}, \texttt{resolution\_days}, \texttt{created\_yearmonth}
+    \end{itemize}
+    \item \textbf{Chargement}~: Insertion complète (\textit{replace}) ou mise à jour incrémentielle (\textit{upsert}) dans la table \texttt{issues}.
+\end{itemize}
+
+\section{Tableau de bord Streamlit}
+
+Le dashboard Streamlit est organisé en six onglets~:
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{p{0.22\linewidth} p{0.68\linewidth}}
+    \toprule
+    \textbf{Onglet} & \textbf{Contenu} \\
+    \midrule
+    Vue d'ensemble & KPIs globaux, répartition par type, priorité, statut, projet \\
+    Tendances & Évolution mensuelle, tickets par jour de la semaine, mix par type \\
+    Analyse & Performance par assigné, origine des causes, matrice priorité/type \\
+    SLA \& KPIs & Taux de conformité, distribution des délais, gauges de performance \\
+    Burndown & Graphique de burndown basé sur le scope engagé + tickets hors-scope \\
+    Agent IA & Interface de chat pour interroger la base en langage naturel \\
+    \bottomrule
+\end{tabular}
+\caption{Organisation des onglets du tableau de bord Streamlit}
+\end{table}
+
+\section{Suivi du scope de sprint et burndown}
+
+Une des fonctionnalités clés du projet est le \textbf{suivi du scope engagé} pour chaque sprint de livraison. À partir du fichier \textit{Release Lifecycle}, l'application identifie la liste exacte des tickets engagés, croise ces informations avec les données live de Jira en base, et construit~:
+
+\begin{itemize}[leftmargin=2em]
+    \item Un \textbf{graphique de burndown} affichant la courbe réelle (points restants par jour) face à la courbe idéale linéaire.
+    \item Un tableau des \textbf{tickets hors-scope} présents dans Jira pour le même sprint mais absents du périmètre engagé.
+    \item Les \textbf{KPIs de sprint}~: total de points engagés, points complétés, pourcentage d'avancement.
+\end{itemize}
+
+Un ticket est considéré comme \textbf{complété} si l'une des dates suivantes est renseignée~: date de qualification, date de résolution, ou date de clôture (par ordre de priorité).
+
+% ════════════════════════════════════════════════════════════════════════════
+% CONCLUSION
+% ════════════════════════════════════════════════════════════════════════════
+\chapter*{Conclusion et Perspectives}
+\addcontentsline{toc}{chapter}{Conclusion et Perspectives}
+
+Ce stage au sein de DXC Technology m'a permis d'aborder concrètement les défis liés à la valorisation des données opérationnelles dans un contexte d'entreprise internationale. La solution développée répond aux besoins identifiés~: automatisation du reporting, centralisation des données, suivi en temps réel des indicateurs de performance et pilotage des sprints de livraison.
+
+Sur le plan technique, ce projet a consolidé mes compétences en ingénierie des données (ETL, modélisation relationnelle), en développement d'applications data (Streamlit, Plotly), en reporting métier (Power BI, DAX) et en intégration d'intelligence artificielle (API Claude, génération de SQL par LLM).
+
+\textbf{Perspectives d'évolution}~:
+\begin{itemize}[leftmargin=2em]
+    \item Connexion directe à l'API Jira pour remplacer les exports manuels par une synchronisation automatique en temps réel.
+    \item Mise en place d'alertes automatiques (email / notification) en cas de dépassement de seuil SLA.
+    \item Extension du scope de l'agent IA pour inclure la génération automatique de rapports hebdomadaires et mensuels.
+    \item Intégration d'un module de prédiction des délais de résolution par apprentissage automatique.
+    \item Déploiement d'un pipeline de données continu avec orchestration (Apache Airflow ou équivalent).
+\end{itemize}
+
+Ce stage constitue une expérience fondatrice qui confirme mon intérêt pour les métiers de la data et de l'analytique, et me prépare à contribuer efficacement à des projets de transformation numérique à forte valeur ajoutée.
+
+% ── BIBLIOGRAPHIE ───────────────────────────────────────────────────────────
+\chapter*{Références}
+\addcontentsline{toc}{chapter}{Références}
+
+\begin{itemize}[leftmargin=2em]
+    \item Atlassian. \textit{Jira Software Documentation}. \url{https://support.atlassian.com/jira-software-cloud/}
+    \item Streamlit Inc. \textit{Streamlit Documentation}. \url{https://docs.streamlit.io}
+    \item Anthropic. \textit{Claude API Documentation}. \url{https://docs.anthropic.com}
+    \item Microsoft. \textit{Power BI Documentation}. \url{https://learn.microsoft.com/power-bi/}
+    \item Aiven. \textit{Aiven MySQL Documentation}. \url{https://aiven.io/docs/products/mysql}
+    \item McKinney, W. (2022). \textit{Python for Data Analysis}, 3rd edition. O'Reilly Media.
+    \item DXC Technology. \textit{About DXC}. \url{https://www.dxc.com/us/en/about-us}
+\end{itemize}
+
+\end{document}

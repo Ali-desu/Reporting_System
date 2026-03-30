@@ -254,6 +254,128 @@ def _table_exists(engine) -> bool:
     return inspect(engine).has_table("issues")
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_r25_scope() -> pd.DataFrame:
+    """Load and resolve scope keys from Release_lifecycle_R25.xlsx (cached 1 h)."""
+    _raw = pd.read_excel("data/Release_lifecycle_R25.xlsx", sheet_name="Scope UPDATE", header=0)
+    _raw.columns = [str(c).strip() for c in _raw.columns]
+    scope = _raw[["Key", "expected sprint", "Story point", "statut",
+                  "expected sprint Jira", "Committed (Yes/No)"]].copy()
+    scope.columns = ["key", "scope_sprint", "scope_points",
+                     "scope_status", "jira_sprint", "committed"]
+    scope["key"] = scope["key"].astype(str).str.strip()
+    scope = scope[
+        scope["key"].notna() & (scope["key"] != "nan") & (scope["key"] != "")
+    ].reset_index(drop=True)
+
+    # Fill null scope_sprint from Jira extract, then jira_sprint column
+    null_idx = scope[scope["scope_sprint"].isna()].index.tolist()
+    if null_idx:
+        try:
+            _ext = pd.read_excel("data/extract_new.xlsx", sheet_name=0)
+            _ext.columns = [str(c).strip() for c in _ext.columns]
+            null_keys = scope.loc[null_idx, "key"].tolist()
+            ext_map = (
+                _ext[_ext["Key"].isin(null_keys)]
+                .set_index("Key")["Expected Sprint"]
+                .to_dict()
+            )
+            for idx in null_idx:
+                k = scope.at[idx, "key"]
+                ext_val = ext_map.get(k)
+                jira_val = str(scope.at[idx, "jira_sprint"]).strip()
+                if pd.notna(ext_val) and str(ext_val).strip() not in ("", "nan"):
+                    scope.at[idx, "scope_sprint"] = ext_val
+                elif jira_val not in ("0", "", "nan"):
+                    scope.at[idx, "scope_sprint"] = jira_val
+        except Exception:
+            pass
+    return scope
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_team_availability():
+    """Load team availability table + sprint metadata from Release_lifecycle_R25.xlsx."""
+    import re as _re
+    raw = pd.read_excel(
+        "data/Release_lifecycle_R25.xlsx",
+        sheet_name="Team availibility", header=None
+    )
+
+    # ── Sprint metadata (top-right block) ─────────────────────────────────────
+    sprint_duration = float(raw.iloc[0, 13]) if pd.notna(raw.iloc[0, 13]) else 15.0
+    cap_planifiee   = float(raw.iloc[0, 19]) if pd.notna(raw.iloc[0, 19]) else None
+    velocite_reele  = float(raw.iloc[1, 19]) if pd.notna(raw.iloc[1, 19]) else None
+    sp_vs_jh        = float(raw.iloc[23, 13]) if pd.notna(raw.iloc[23, 13]) else None
+
+    # Parse start date — Excel stores DD/MM/YYYY; pandas may misread as MM/DD
+    try:
+        start_dt = pd.to_datetime(raw.iloc[0, 16])
+        end_dt   = pd.to_datetime(str(raw.iloc[1, 16]), dayfirst=True)
+        if start_dt > end_dt:          # month/day were swapped by pandas
+            start_dt = pd.Timestamp(start_dt.year, start_dt.day, start_dt.month)
+        sprint_start = start_dt.date()
+        sprint_end   = end_dt.date()
+    except Exception:
+        import datetime as _dt
+        sprint_start = _dt.date(2026, 3, 8)
+        sprint_end   = _dt.date(2026, 3, 27)
+
+    # ── Team table (rows 1-21, cols 0-7) ──────────────────────────────────────
+    team = raw.iloc[1:22, [0, 1, 2, 3, 4, 5, 6, 7]].copy()
+    team.columns = ["squad", "name", "vacation", "formation", "transverse",
+                    "availability", "contingence", "cap_prod"]
+    team = team[team["name"].notna() & (team["name"].astype(str).str.strip() != "nan")].copy()
+    team["name"]         = team["name"].astype(str).str.strip()
+    team["squad"]        = team["squad"].astype(str).str.strip().replace("nan", "—")
+    team["cap_prod"]     = pd.to_numeric(team["cap_prod"],    errors="coerce").fillna(0)
+    team["availability"] = pd.to_numeric(team["availability"], errors="coerce").fillna(0)
+    team = team.reset_index(drop=True)
+
+    sprint_info = {
+        "duration_days":  sprint_duration,
+        "start":          sprint_start,
+        "end":            sprint_end,
+        "cap_planifiee":  cap_planifiee,
+        "velocite_reele": velocite_reele,
+        "sp_vs_jh":       sp_vs_jh,
+    }
+    return team, sprint_info
+
+
+def _norm(s: str) -> str:
+    """Normalize a person name for fuzzy matching."""
+    import re as _re
+    s = str(s).lower()
+    s = _re.sub(r"\(.*?\)", "", s)          # remove (BA), (ba), etc.
+    s = _re.sub(r"[@\.,\-_]", " ", s)      # punctuation → space
+    s = _re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _name_score(a: str, b: str) -> float:
+    """Token-overlap + sequence similarity between two person names."""
+    import difflib as _dl
+    na, nb = _norm(a), _norm(b)
+    ta = {t for t in na.split() if len(t) > 2}
+    tb = {t for t in nb.split() if len(t) > 2}
+    if not ta or not tb:
+        return 0.0
+    tok  = len(ta & tb) / max(len(ta), len(tb))
+    seq  = _dl.SequenceMatcher(None, na, nb).ratio() * 0.75
+    return max(tok, seq)
+
+
+def _match_names(avail_name: str, jira_names) -> tuple[str | None, float]:
+    """Return (best_jira_name, score) for an availability sheet name."""
+    best, best_s = None, 0.0
+    for jn in jira_names:
+        s = _name_score(avail_name, jn)
+        if s > best_s:
+            best, best_s = jn, s
+    return (best if best_s >= 0.30 else None), best_s
+
+
 @st.cache_data(ttl=30, show_spinner="Loading data…")
 def load_data() -> pd.DataFrame:
     engine = _engine()
@@ -405,8 +527,8 @@ with st.sidebar:
 st.markdown('<p class="page-title">Service Desk Analytics</p>', unsafe_allow_html=True)
 st.markdown('<p class="page-subtitle">Issue tracking · Performance monitoring · Sprint planning</p>', unsafe_allow_html=True)
 
-tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_chat, tab_upload = st.tabs([
-    "Overview", "Trends", "Analysis", "SLA & KPIs", "Burndown", "AI Assistant", "Upload",
+tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_team, tab_chat, tab_upload = st.tabs([
+    "Overview", "Trends", "Analysis", "SLA & KPIs", "Burndown", "Team", "AI Assistant", "Upload",
 ])
 
 # ── TAB 5: UPLOAD (always accessible) ─────────────────────────────────────────
@@ -463,7 +585,7 @@ with tab_upload:
         sc4.metric("Projects", df_all["project"].nunique() if "project" in df_all else "—")
 
 if not has_data:
-    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_chat]:
+    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_team, tab_chat]:
         with t:
             st.info("No data available. Go to the **Upload** tab to load your Extract file.")
     st.stop()
@@ -472,7 +594,7 @@ if not has_data:
 df = apply_filters(df_all, filters)
 
 if df.empty:
-    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_chat]:
+    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_team, tab_chat]:
         with t:
             st.warning("No records match the current filters.")
     st.stop()
@@ -805,261 +927,538 @@ with tab_sla:
 # ── TAB 5: BURNDOWN ───────────────────────────────────────────────────────────
 with tab_burndown:
     import datetime
-    st.markdown("#### Sprint Burndown")
+    st.markdown("#### Sprint Burndown — R25 Committed Scope")
 
-    if "expected_sprint" not in df_all.columns:
-        st.warning("No sprint data found.")
+    QUICK_START = datetime.date(2026, 3, 8)
+    QUICK_END   = datetime.date(2026, 3, 26)
+
+    # ── Load scope (cached) ────────────────────────────────────────────────────
+    try:
+        scope_df  = load_r25_scope()
+        scope_keys = scope_df["key"].tolist()
+    except Exception as e:
+        st.error(f"Could not load scope file: {e}")
+        st.stop()
+
+    # ── Merge scope with live DB data ──────────────────────────────────────────
+    db_cols = ["key", "summary", "issue_type", "priority", "status",
+               "story_points", "is_resolved", "resolved", "closure_date",
+               "qualification_date", "assignee"]
+    df_db = df_all[[c for c in db_cols if c in df_all.columns]].copy()
+    df_db = df_db[df_db["key"].isin(scope_keys)]
+
+    df_merged = scope_df.merge(df_db, on="key", how="left")
+    # Use DB story_points where available, fall back to scope file points
+    df_merged["_points"] = pd.to_numeric(df_merged["story_points"], errors="coerce")
+    df_merged["_points"] = df_merged["_points"].fillna(
+        pd.to_numeric(df_merged["scope_points"], errors="coerce")
+    )
+    # Completion date: qualification_date first, then resolved, then closure_date
+    df_merged["_resolved_at"] = pd.NaT
+    for _col in ["qualification_date", "resolved", "closure_date"]:
+        if _col in df_merged.columns:
+            df_merged["_resolved_at"] = df_merged["_resolved_at"].fillna(df_merged[_col])
+
+    # ── Sprint date selector ───────────────────────────────────────────────────
+    if st.button("Load R25  (08 Mar → 26 Mar 2026)", key="load_r25"):
+        st.session_state["burn_start"] = QUICK_START
+        st.session_state["burn_end"]   = QUICK_END
+
+    dc1, dc2 = st.columns(2)
+    with dc1:
+        sprint_start = st.date_input("Sprint Start Date",
+                                     value=st.session_state.get("burn_start", QUICK_START),
+                                     key="burn_start")
+    with dc2:
+        sprint_end = st.date_input("Sprint End Date",
+                                   value=st.session_state.get("burn_end", QUICK_END),
+                                   key="burn_end")
+
+    if sprint_end <= sprint_start:
+        st.error("End date must be after start date.")
     else:
-        raw_sprints = df_all["expected_sprint"].dropna().unique().tolist()
-        raw_sprints = [s for s in raw_sprints if str(s).strip().lower() not in ("", "none")]
+        # ── Burndown mode ──────────────────────────────────────────────────────
+        burn_mode = st.radio("Burndown metric", ["Story Points", "Ticket Count"],
+                             horizontal=True, key="burn_mode")
 
-        group_map: dict[str, list[str]] = {}
-        for raw in raw_sprints:
-            g = sprint_group(raw)
-            if g:
-                group_map.setdefault(g, []).append(raw)
-
-        sprint_groups = sorted(group_map.keys())
-
-        if not sprint_groups:
-            st.warning("No sprint data found. The `Expected Sprint` column appears to be empty for all issues.")
+        if burn_mode == "Story Points":
+            df_merged["_weight"] = df_merged["_points"].fillna(0)
+            n_unpointed = (df_merged["_weight"] == 0).sum()
+            if n_unpointed > 0:
+                st.caption(f"⚠️ {n_unpointed} issue(s) have no story points and contribute 0 to the burn.")
+            unit = "pts"
         else:
-            QUICK_SPRINT = "v22 R25"
-            QUICK_START  = datetime.date(2026, 3, 8)
-            QUICK_END    = datetime.date(2026, 3, 26)
+            df_merged["_weight"] = 1.0
+            unit = "tickets"
 
-            if st.button("Load current sprint  —  v22 R25  (08 Mar → 26 Mar 2026)"):
-                st.session_state["burn_sprint"] = QUICK_SPRINT
-                st.session_state["burn_start"]  = QUICK_START
-                st.session_state["burn_end"]    = QUICK_END
+        total_work = df_merged["_weight"].sum()
 
-            default_sprint_idx = sprint_groups.index(st.session_state.get("burn_sprint", sprint_groups[0])) \
-                if st.session_state.get("burn_sprint") in sprint_groups else 0
+        # ── Build daily remaining ──────────────────────────────────────────────
+        days = pd.date_range(start=sprint_start, end=sprint_end, freq="D")
+        remaining = []
+        for day in days:
+            day_ts = pd.Timestamp(day)
+            resolved_by_day = df_merged[
+                df_merged["_resolved_at"].notna() &
+                (df_merged["_resolved_at"] <= day_ts + pd.Timedelta(hours=23, minutes=59))
+            ]["_weight"].sum()
+            remaining.append(total_work - resolved_by_day)
 
-            selected_group = st.selectbox(
-                "Select Sprint",
-                sprint_groups,
-                index=default_sprint_idx,
-                key="burn_sprint",
-                help="Variants like v22 R25.1, v22 R25.2, v22 R25 ADDS are merged into v22 R25",
+        burn_df = pd.DataFrame({"Date": days, "Remaining": remaining})
+        n_days = len(days)
+        burn_df["Ideal"] = [
+            total_work * (1 - i / (n_days - 1)) for i in range(n_days)
+        ] if n_days > 1 else [0]
+
+        resolved_in_sprint = df_merged[
+            df_merged["_resolved_at"].notna() &
+            (df_merged["_resolved_at"] >= pd.Timestamp(sprint_start)) &
+            (df_merged["_resolved_at"] <= pd.Timestamp(sprint_end) + pd.Timedelta(hours=23, minutes=59))
+        ]["_weight"].sum()
+
+        pct_done = resolved_in_sprint / total_work * 100 if total_work > 0 else 0
+
+        # ── KPI cards ──────────────────────────────────────────────────────────
+        bk1, bk2, bk3, bk4 = st.columns(4)
+        with bk1: kpi_card("Sprint", "R25 Scope")
+        with bk2: kpi_card("Total Work", f"{total_work:.0f} {unit}")
+        with bk3: kpi_card("Completed", f"{resolved_in_sprint:.0f} {unit}",
+                            color=DXC_PURPLE_LITE if pct_done >= 80 else "#E65100")
+        with bk4: kpi_card("Done", f"{pct_done:.1f}%",
+                            color=DXC_PURPLE_LITE if pct_done >= 80 else DXC_GREY_LIGHT)
+
+        st.markdown("---")
+        sec("Burndown — R25 Committed Scope")
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=burn_df["Date"], y=burn_df["Ideal"],
+            mode="lines", name="Ideal",
+            line=dict(color=DXC_GREY, width=2, dash="dash"),
+        ))
+        fig.add_trace(go.Scatter(
+            x=burn_df["Date"], y=burn_df["Remaining"],
+            mode="lines+markers+text", name="Actual Remaining",
+            line=dict(color=DXC_PURPLE_LITE, width=3),
+            marker=dict(size=6),
+            fill="tozeroy", fillcolor="rgba(109,32,119,0.12)",
+            text=[f"{v:.1f}" for v in burn_df["Remaining"]],
+            textposition="top center",
+            textfont=dict(color=DXC_PURPLE_LITE, size=11),
+        ))
+        fig.add_trace(go.Scatter(
+            x=pd.concat([burn_df["Date"], burn_df["Date"][::-1]]).tolist(),
+            y=pd.concat([burn_df["Ideal"], burn_df["Remaining"][::-1]]).tolist(),
+            fill="toself", fillcolor="rgba(255,255,255,0.04)",
+            line=dict(color="rgba(0,0,0,0)"),
+            hoverinfo="skip", name="Deviation", showlegend=True,
+        ))
+        fig.update_layout(
+            yaxis=dict(title=f"Remaining ({unit})", gridcolor=DXC_BORDER),
+            hovermode="x unified", **CHART_THEME,
+        )
+        chart(fig)
+
+        with st.expander("Daily breakdown"):
+            _bdf = burn_df.copy()
+            _bdf["Burned Today"] = _bdf["Remaining"].shift(1).fillna(total_work) - _bdf["Remaining"]
+            _bdf["% Done"] = ((total_work - _bdf["Remaining"]) / total_work * 100).round(1)
+            _bdf["Date"] = _bdf["Date"].dt.strftime("%Y-%m-%d")
+            for col in ["Remaining", "Ideal", "Burned Today"]:
+                _bdf[col] = _bdf[col].round(1)
+            st.dataframe(_bdf[["Date", "Remaining", "Ideal", "Burned Today", "% Done"]],
+                         use_container_width=True, hide_index=True)
+
+        # ── Scope issues table ─────────────────────────────────────────────────
+        st.markdown("---")
+        sec(f"Committed Scope Issues ({len(df_merged)})")
+        show_cols = [c for c in ["key", "summary", "issue_type", "priority",
+                                  "status", "_points", "scope_sprint", "_resolved_at", "assignee"]
+                     if c in df_merged.columns]
+        st.dataframe(
+            df_merged[show_cols]
+            .rename(columns={"_points": "story_points", "scope_sprint": "sprint",
+                             "_resolved_at": "resolved_at"})
+            .sort_values("priority", key=lambda s: s.map(
+                {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}).fillna(4)),
+            use_container_width=True, hide_index=True,
+        )
+
+        # ── Out of scope R25 issues ────────────────────────────────────────────
+        st.markdown("---")
+        sec("R25 Issues NOT in Committed Scope")
+        st.caption(
+            "Issues found in Jira with an R25 sprint assignment that are **not** in the "
+            "committed scope file. These are not tracked in the burndown above."
+        )
+
+        r25_in_db = df_all[
+            df_all["expected_sprint"].astype(str).str.contains(r"\.25\.", na=False, regex=True) |
+            df_all["expected_sprint"].astype(str).str.upper().str.contains("DATAFIX 25", na=False)
+        ].copy()
+        df_out_of_scope = r25_in_db[~r25_in_db["key"].isin(scope_keys)].copy()
+
+        oos1, oos2, oos3 = st.columns(3)
+        with oos1: kpi_card("Out of Scope", f"{len(df_out_of_scope)}", color="#E65100")
+        with oos2:
+            oos_open = int((df_out_of_scope["is_resolved"] == False).sum()) \
+                if "is_resolved" in df_out_of_scope.columns else len(df_out_of_scope)
+            kpi_card("Still Open", f"{oos_open}", color="#C62828")
+        with oos3:
+            oos_pts = pd.to_numeric(df_out_of_scope.get("story_points", pd.Series(dtype=float)),
+                                    errors="coerce").sum()
+            kpi_card("Untracked Points", f"{oos_pts:.0f}", color="#E65100")
+
+        if df_out_of_scope.empty:
+            st.success("All R25 Jira issues are within the committed scope.")
+        else:
+            oos_cols = [c for c in ["key", "summary", "issue_type", "priority",
+                                     "status", "expected_sprint", "story_points", "assignee"]
+                        if c in df_out_of_scope.columns]
+            st.dataframe(
+                df_out_of_scope[oos_cols].sort_values(
+                    "priority", key=lambda s: s.map(
+                        {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}).fillna(4)
+                ),
+                use_container_width=True, hide_index=True,
             )
 
-            raw_values = group_map[selected_group]
-            with st.expander(f"Includes {len(raw_values)} raw sprint value(s)", expanded=False):
-                st.write(", ".join(sorted(raw_values)))
 
-            dc1, dc2 = st.columns(2)
-            with dc1:
-                sprint_start = st.date_input("Sprint Start Date",
-                                             value=st.session_state.get("burn_start", None),
-                                             key="burn_start")
-            with dc2:
-                sprint_end = st.date_input("Sprint End Date",
-                                           value=st.session_state.get("burn_end", None),
-                                           key="burn_end")
+# ── TAB: TEAM PRODUCTIVITY ────────────────────────────────────────────────────
+with tab_team:
+    st.markdown("#### Team Productivity — R25")
 
-            if not sprint_start or not sprint_end:
-                st.info("Pick a start and end date for the sprint to generate the chart.")
-            elif sprint_end <= sprint_start:
-                st.error("End date must be after start date.")
-            else:
-                df_sprint = df_all[df_all["expected_sprint"].isin(raw_values)].copy()
+    # ── Load data (both cached) ────────────────────────────────────────────────
+    try:
+        avail_df, sprint_info = load_team_availability()
+        scope_df_t = load_r25_scope()
+        scope_keys_t = scope_df_t["key"].tolist()
+    except Exception as _e:
+        st.error(f"Could not load Release Lifecycle file: {_e}")
+        st.stop()
 
-                if df_sprint.empty:
-                    st.warning(f"No issues found for sprint **{selected_group}**.")
-                else:
-                    # ── Burndown mode selector ─────────────────────────────────────
-                    burn_mode = st.radio(
-                        "Burndown metric",
-                        ["Story Points", "Ticket Count"],
-                        horizontal=True,
-                        key="burn_mode",
-                    )
+    # ── Build merged scope × DB ────────────────────────────────────────────────
+    _db_cols = ["key", "story_points", "resolved", "closure_date",
+                "qualification_date", "assignee"]
+    _df_db_t = df_all[[c for c in _db_cols if c in df_all.columns]].copy()
+    _df_db_t = _df_db_t[_df_db_t["key"].isin(scope_keys_t)]
+    _df_m = scope_df_t.merge(_df_db_t, on="key", how="left")
 
-                    if burn_mode == "Ticket Count":
-                        st.caption(
-                            "**Ticket Count mode** — each issue counts as 1 unit of work, "
-                            "regardless of story points. Total work = number of issues in the sprint. "
-                            "An issue is 'burned' on the day it was resolved. "
-                            "Useful when story points are missing or unreliable, or when you want "
-                            "to track delivery pace purely by issue throughput."
-                        )
+    # Effective points: DB first, scope file fallback
+    _df_m["_pts"] = (
+        pd.to_numeric(_df_m["story_points"], errors="coerce")
+        .fillna(pd.to_numeric(_df_m["scope_points"], errors="coerce"))
+        .fillna(0)
+    )
 
-                    df_sprint["_resolved_at"] = df_sprint["resolved"].fillna(df_sprint["closure_date"]) \
-                        if "closure_date" in df_sprint.columns else df_sprint["resolved"]
+    # Completion date: qualification_date → resolved → closure_date
+    _df_m["_done_at"] = pd.NaT
+    for _c in ["qualification_date", "resolved", "closure_date"]:
+        if _c in _df_m.columns:
+            _df_m["_done_at"] = _df_m["_done_at"].fillna(_df_m[_c])
 
-                    if burn_mode == "Story Points":
-                        df_sprint["_weight"] = pd.to_numeric(df_sprint["story_points"], errors="coerce").fillna(0) \
-                            if "story_points" in df_sprint.columns else 0.0
-                        n_unpointed = (df_sprint["_weight"] == 0).sum()
-                        if n_unpointed > 0:
-                            st.caption(f"⚠️ {n_unpointed} issue(s) have no story points and contribute 0 to the burn.")
-                        unit = "pts"
-                    else:
-                        df_sprint["_weight"] = 1.0
-                        unit = "tickets"
+    # Ticket counts as delivered only if completed WITHIN the sprint window
+    _sp_start = pd.Timestamp(sprint_info["start"]) if sprint_info.get("start") else None
+    _sp_end   = (pd.Timestamp(sprint_info["end"]) + pd.Timedelta(hours=23, minutes=59)) \
+                if sprint_info.get("end") else None
+    if _sp_start and _sp_end:
+        _df_m["_delivered"] = (
+            _df_m["_done_at"].notna() &
+            (_df_m["_done_at"] >= _sp_start) &
+            (_df_m["_done_at"] <= _sp_end)
+        )
+    else:
+        _df_m["_delivered"] = _df_m["_done_at"].notna()
 
-                    total_work = df_sprint["_weight"].sum()
+    # ── Sprint banner ──────────────────────────────────────────────────────────
+    _s = sprint_info
+    _sb1, _sb2, _sb3, _sb4, _sb5 = st.columns(5)
+    with _sb1: kpi_card("Sprint", "R25")
+    with _sb2: kpi_card("Duration", f"{int(_s['duration_days'])} days")
+    with _sb3:
+        kpi_card("Dates",
+                 f"{_s['start'].strftime('%d %b') if _s['start'] else '—'} → "
+                 f"{_s['end'].strftime('%d %b %Y') if _s['end'] else '—'}")
+    with _sb4: kpi_card("Planned Capacity", f"{_s['cap_planifiee']:.0f} JH" if _s['cap_planifiee'] else "—")
+    with _sb5: kpi_card("Actual Velocity", f"{_s['velocite_reele']:.0f} SP" if _s['velocite_reele'] else "—")
 
-                    days = pd.date_range(start=sprint_start, end=sprint_end, freq="D")
-                    remaining = []
-                    for day in days:
-                        day_ts = pd.Timestamp(day)
-                        resolved_by_day = df_sprint[
-                            df_sprint["_resolved_at"].notna() &
-                            (df_sprint["_resolved_at"] <= day_ts + pd.Timedelta(hours=23, minutes=59))
-                        ]["_weight"].sum()
-                        remaining.append(total_work - resolved_by_day)
+    st.markdown("---")
 
-                    burn_df = pd.DataFrame({"Date": days, "Remaining": remaining})
-                    n_days = len(days)
-                    ideal = [total_work * (1 - i / (n_days - 1)) for i in range(n_days)] if n_days > 1 else [0]
-                    burn_df["Ideal"] = ideal
+    # ── Delivered SP per Jira assignee (within sprint window) ─────────────────
+    _delivered_agg = (
+        _df_m[_df_m["_delivered"]]
+        .groupby("assignee", dropna=True)["_pts"]
+        .sum()
+        .reset_index()
+        .rename(columns={"assignee": "jira_name", "_pts": "delivered_sp"})
+    )
+    _jira_names     = _delivered_agg["jira_name"].tolist()
+    # SP ceiling: all delivered scope tickets (includes unassigned / unmatched)
+    _total_delivered_scope = float(_df_m[_df_m["_delivered"]]["_pts"].sum())
 
-                    resolved_in_sprint = df_sprint[
-                        df_sprint["_resolved_at"].notna() &
-                        (df_sprint["_resolved_at"] >= pd.Timestamp(sprint_start)) &
-                        (df_sprint["_resolved_at"] <= pd.Timestamp(sprint_end) + pd.Timedelta(hours=23, minutes=59))
-                    ]["_weight"].sum()
+    # ── Exclusive one-to-one matching: each Jira assignee → one avail person ──
+    # Problem with naive approach: multiple avail people can score > threshold
+    # against the same Jira name, causing the same SP to be credited many times.
+    # Fix: compute all pairwise scores, then greedily assign each Jira name to
+    # its single best-matching avail person (highest score wins, exclusive).
+    _unique_avail_names = avail_df["name"].drop_duplicates().tolist()
+    _pair_scores = []
+    for _jn in _jira_names:
+        for _an in _unique_avail_names:
+            _s = _name_score(_jn, _an)
+            if _s >= 0.35:
+                _pair_scores.append({"jira": _jn, "avail": _an, "score": _s})
 
-                    pct_done = resolved_in_sprint / total_work * 100 if total_work > 0 else 0
+    # Sort descending by score; assign each Jira name to its top-scoring avail person
+    _jira_to_avail: dict = {}
+    for _p in sorted(_pair_scores, key=lambda x: -x["score"]):
+        if _p["jira"] not in _jira_to_avail:
+            _jira_to_avail[_p["jira"]] = _p["avail"]
 
-                    bk1, bk2, bk3, bk4 = st.columns(4)
-                    with bk1: kpi_card("Sprint",     selected_group[:30])
-                    with bk2: kpi_card("Total Work", f"{total_work:.0f} {unit}")
-                    with bk3: kpi_card("Completed",  f"{resolved_in_sprint:.0f} {unit}",
-                                       color=DXC_PURPLE_LITE if pct_done >= 80 else "#E65100")
-                    with bk4: kpi_card("Done",       f"{pct_done:.1f}%",
-                                       color=DXC_PURPLE_LITE if pct_done >= 80 else DXC_GREY_LIGHT)
+    # Sum SP per avail person (an avail person can receive multiple Jira names' SP)
+    _avail_sp_map: dict = {}
+    _avail_jira_map: dict = {}
+    for _jn, _an in _jira_to_avail.items():
+        _row = _delivered_agg[_delivered_agg["jira_name"] == _jn]
+        if len(_row):
+            _avail_sp_map[_an]  = _avail_sp_map.get(_an, 0.0) + float(_row["delivered_sp"].values[0])
+            _avail_jira_map.setdefault(_an, []).append(_jn)
 
-                    st.markdown("---")
-                    sec(f"Burndown — {selected_group}")
+    # ── Build raw person rows from availability sheet ──────────────────────────
+    _raw_rows = []
+    for _, _ar in avail_df.iterrows():
+        _an = _ar["name"]
+        _sp = _avail_sp_map.get(_an, 0.0)
+        _jn_list = _avail_jira_map.get(_an, [])
+        _raw_rows.append({
+            "name":         _an,
+            "squad":        _ar["squad"],
+            "cap_prod":     float(_ar["cap_prod"]),
+            "delivered_sp": _sp,
+            "jira_name":    ", ".join(_jn_list) if _jn_list else None,
+        })
+    _raw = pd.DataFrame(_raw_rows)
 
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=burn_df["Date"], y=burn_df["Ideal"],
-                        mode="lines", name="Ideal",
-                        line=dict(color=DXC_GREY, width=2, dash="dash"),
-                    ))
-                    fig.add_trace(go.Scatter(
-                        x=burn_df["Date"], y=burn_df["Remaining"],
-                        mode="lines+markers+text", name="Actual Remaining",
-                        line=dict(color=DXC_PURPLE_LITE, width=3),
-                        marker=dict(size=6),
-                        fill="tozeroy", fillcolor="rgba(109,32,119,0.12)",
-                        text=[f"{v:.1f}" for v in burn_df["Remaining"]],
-                        textposition="top center",
-                        textfont=dict(color=DXC_PURPLE_LITE, size=11),
-                    ))
-                    fig.add_trace(go.Scatter(
-                        x=pd.concat([burn_df["Date"], burn_df["Date"][::-1]]).tolist(),
-                        y=pd.concat([burn_df["Ideal"], burn_df["Remaining"][::-1]]).tolist(),
-                        fill="toself", fillcolor="rgba(255,255,255,0.04)",
-                        line=dict(color="rgba(0,0,0,0)"),
-                        hoverinfo="skip", name="Deviation", showlegend=True,
-                    ))
-                    fig.update_layout(
-                        yaxis=dict(title=f"Remaining ({unit})", gridcolor=DXC_BORDER),
-                        hovermode="x unified", **CHART_THEME,
-                    )
-                    chart(fig)
+    # ── Deduplicate: same person listed in multiple squads ─────────────────────
+    # - identical cap_prod across rows → true duplicate → keep MAX (one of them)
+    # - differing cap_prod → real multi-squad allocation → SUM the JH
+    # - delivered_sp is always MAX (never double-count SP for the same person)
+    def _dedup_cap(grp):
+        vals = grp["cap_prod"].values
+        return vals[0] if len(set(vals)) == 1 else float(vals.sum())
 
-                    with st.expander("Daily breakdown"):
-                        burn_df["Burned Today"] = burn_df["Remaining"].shift(1).fillna(total_work) - burn_df["Remaining"]
-                        burn_df["% Done"] = ((total_work - burn_df["Remaining"]) / total_work * 100).round(1)
-                        burn_df["Date"] = burn_df["Date"].dt.strftime("%Y-%m-%d")
-                        burn_df["Remaining"] = burn_df["Remaining"].round(1)
-                        burn_df["Ideal"] = burn_df["Ideal"].round(1)
-                        burn_df["Burned Today"] = burn_df["Burned Today"].round(1)
-                        st.dataframe(burn_df[["Date", "Remaining", "Ideal", "Burned Today", "% Done"]],
-                                     use_container_width=True, hide_index=True)
+    _team_list = []
+    for _name, _grp in _raw.groupby("name", sort=False):
+        _cap     = _dedup_cap(_grp)
+        _sp      = _grp["delivered_sp"].max()
+        _primary = _grp.loc[_grp["cap_prod"].idxmax()]
+        _team_list.append({
+            "name":         _name,
+            "squad":        _primary["squad"],
+            "cap_prod":     _cap,
+            "delivered_sp": _sp,
+            "jira_name":    _primary["jira_name"],
+        })
+    _team = pd.DataFrame(_team_list)
 
-                    with st.expander(f"Issues in this sprint ({len(df_sprint)})"):
-                        show_cols = [c for c in ["key", "summary", "issue_type", "priority",
-                                                  "status", "story_points", "_resolved_at"]
-                                     if c in df_sprint.columns]
-                        st.dataframe(df_sprint[show_cols].rename(columns={"_resolved_at": "resolved_at"}),
-                                     use_container_width=True, hide_index=True)
+    # ── Separate: cap_prod=0 people who nevertheless delivered ────────────────
+    # These are people whose entire sprint time was officially allocated to
+    # transverse/vacation (cap_prod=0), yet they have assigned scope tickets.
+    _unplanned = _team[(_team["cap_prod"] == 0) & (_team["delivered_sp"] > 0)].copy()
 
-                    # ── Carried-over issues ────────────────────────────────────────────
-                    st.markdown("---")
-                    sec("Carried-Over Issues")
-                    st.caption(
-                        "Issues currently assigned to this sprint whose **Original Expected Sprint** "
-                        "was a different sprint — meaning they slipped from a previous delivery."
-                    )
+    # Main chart: only people with cap_prod > 0
+    _team_main = _team[_team["cap_prod"] > 0].copy()
 
-                    if "original_expected_sprint" not in df_sprint.columns:
-                        st.info(
-                            "The `Original Expected Sprint` column is not in the database. "
-                            "Re-upload your extract using **Replace all** to capture it."
-                        )
-                    else:
-                        # Normalise original sprint and compare to current sprint group
-                        df_sprint["_orig_group"] = df_sprint["original_expected_sprint"].apply(sprint_group)
-                        carried = df_sprint[
-                            df_sprint["_orig_group"].notna() &
-                            (df_sprint["_orig_group"] != selected_group)
-                        ].copy()
+    # Productivity % = delivered_sp / cap_prod × 100
+    _team_main["productivity"] = (
+        _team_main["delivered_sp"] / _team_main["cap_prod"] * 100
+    ).round(1)
 
-                        co1, co2, co3, co4 = st.columns(4)
-                        with co1: kpi_card("Carried Over", f"{len(carried)}", color="#E65100")
-                        with co2: kpi_card("Of Sprint Total", f"{len(carried)/len(df_sprint)*100:.1f}%", color="#E65100")
-                        with co3:
-                            co_pts = carried["_weight"].sum()
-                            co_label = "Carried Points" if unit == "pts" else "Carried Tickets"
-                            kpi_card(co_label, f"{co_pts:.0f} {unit}", color="#E65100")
-                        with co4:
-                            co_open = int((carried["is_resolved"] == 0).sum()) if "is_resolved" in carried.columns else "—"
-                            kpi_card("Still Open", f"{co_open}", color="#C62828")
+    # Tier classification
+    def _tier(p):
+        if p >= 100: return ("#4CAF50", "🏆 Overperformer")
+        if p >= 80:  return (DXC_PURPLE_LITE, "✅ On Track")
+        if p >= 50:  return ("#E65100", "⚠️ Below Target")
+        return ("#C62828", "🔴 Needs Attention")
 
-                        if carried.empty:
-                            st.success("No carried-over issues — all tickets in this sprint were originally planned here.")
-                        else:
-                            # Group by original sprint for a summary
-                            origin_summary = (
-                                carried.groupby("_orig_group")
-                                .agg(
-                                    Issues=("key", "count"),
-                                    Story_Points=("_weight", "sum"),
-                                    Open=("is_resolved", lambda x: (x == 0).sum() if "is_resolved" in carried.columns else 0),
-                                )
-                                .reset_index()
-                                .rename(columns={"_orig_group": "Original Sprint", "Story_Points": "Story Points"})
-                                .sort_values("Issues", ascending=False)
-                            )
-                            origin_summary["Story Points"] = origin_summary["Story Points"].round(1)
+    _team_main["color"], _team_main["tier"] = zip(*_team_main["productivity"].map(_tier))
 
-                            sec("Where Did They Come From?")
-                            fig = px.bar(
-                                origin_summary,
-                                x="Issues", y="Original Sprint",
-                                orientation="h",
-                                color="Issues",
-                                color_continuous_scale=[[0, "#2A1A1A"], [1, "#C62828"]],
-                                text="Issues",
-                            )
-                            fig.update_traces(textposition="outside")
-                            fig.update_layout(
-                                yaxis=dict(autorange="reversed"),
-                                coloraxis_showscale=False,
-                            )
-                            chart(fig)
+    # ── Team-level KPI cards ───────────────────────────────────────────────────
+    _total_jh  = _team_main["cap_prod"].sum()
+    _total_sp  = _team_main["delivered_sp"].sum()
+    _team_pct  = (_total_sp / _total_jh * 100) if _total_jh > 0 else 0
+    _main_with_sp = _team_main[_team_main["productivity"] > 0]
+    _top = _team_main.loc[_team_main["productivity"].idxmax()] if not _team_main.empty else None
+    _bot = _team_main.loc[_team_main["productivity"].idxmin()] if not _team_main.empty else None
 
-                            sec("Carried-Over Issue Details")
-                            detail_cols = [c for c in [
-                                "key", "summary", "priority", "status",
-                                "_orig_group", "story_points", "_resolved_at", "assignee"
-                            ] if c in carried.columns]
-                            st.dataframe(
-                                carried[detail_cols]
-                                .rename(columns={"_orig_group": "original_sprint", "_resolved_at": "resolved_at"})
-                                .sort_values("priority", key=lambda s: s.map(
-                                    {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
-                                ).fillna(4)),
-                                use_container_width=True,
-                                hide_index=True,
-                            )
+    _k1, _k2, _k3, _k4, _k5 = st.columns(5)
+    with _k1: kpi_card("Total Planned", f"{_total_jh:.1f} JH")
+    with _k2: kpi_card("Total Delivered", f"{_total_sp:.0f} SP")
+    with _k3: kpi_card("Team Productivity",
+                        f"{_team_pct:.1f}%",
+                        color=DXC_PURPLE_LITE if _team_pct >= 80 else "#E65100")
+    with _k4:
+        if _top is not None:
+            kpi_card("Top Performer",
+                     f"{_top['name'].split()[0]} ({_top['productivity']:.0f}%)",
+                     color="#4CAF50")
+    with _k5:
+        if _bot is not None:
+            kpi_card("Lowest Productivity",
+                     f"{_bot['name'].split()[0]} ({_bot['productivity']:.0f}%)",
+                     color="#C62828")
+
+    # ── SP reconciliation note (helps verify vs burndown tab) ─────────────────
+    _unplanned_sp   = float(_unplanned["delivered_sp"].sum()) if not _unplanned.empty else 0.0
+    _unmatched_sp   = _total_delivered_scope - _total_sp - _unplanned_sp
+    st.caption(
+        f"SP breakdown — Scope delivered: **{_total_delivered_scope:.0f} pts** total  |  "
+        f"Credited to team: **{_total_sp:.0f} pts**  |  "
+        f"Unplanned (0-cap): **{_unplanned_sp:.0f} pts**  |  "
+        f"Unmatched/unassigned: **{_unmatched_sp:.0f} pts** "
+        f"*(Credited + Unplanned + Unmatched = {_total_sp + _unplanned_sp + _unmatched_sp:.0f} pts)*"
+    )
+
+    st.markdown("---")
+
+    # ── Bullet Chart: Individual Productivity ─────────────────────────────────
+    sec("Individual Productivity — Planned JH vs Delivered SP")
+
+    _sorted = _team_main.sort_values("productivity", ascending=True).copy()
+    _labels = [
+        f"  {row['delivered_sp']:.0f} SP / {row['cap_prod']:.0f} JH = {row['productivity']:.0f}%"
+        for _, row in _sorted.iterrows()
+    ]
+
+    _fig = go.Figure()
+    # Background bars = planned cap_prod JH (wide, grey)
+    _fig.add_trace(go.Bar(
+        x=_sorted["cap_prod"],
+        y=_sorted["name"],
+        orientation="h",
+        marker=dict(color="rgba(109,114,120,0.22)", line=dict(width=0)),
+        name="Planned (JH)",
+        width=0.75,
+        hovertemplate="%{y}<br>Planned: %{x:.1f} JH<extra></extra>",
+    ))
+    # Foreground bars = delivered SP (narrower, colored by tier)
+    _fig.add_trace(go.Bar(
+        x=_sorted["delivered_sp"],
+        y=_sorted["name"],
+        orientation="h",
+        marker=dict(color=_sorted["color"].tolist(), line=dict(width=0)),
+        name="Delivered (SP)",
+        width=0.38,
+        text=_labels,
+        textposition="outside",
+        textfont=dict(size=11, color=DXC_TEXT),
+        hovertemplate="%{y}<br>Delivered: %{x:.1f} SP<extra></extra>",
+    ))
+    _fig.update_layout(**{
+        **CHART_THEME,
+        "barmode": "overlay",
+        "height": max(380, len(_sorted) * 42),
+        "xaxis": dict(title="JH / Story Points", gridcolor=DXC_BORDER),
+        "yaxis": dict(tickfont=dict(size=12)),
+        "legend": dict(orientation="h", y=1.04, x=0),
+        "margin": dict(t=10, b=10, l=10, r=220),
+    })
+    chart(_fig)
+
+    st.markdown("---")
+
+    # ── Two-column: squad breakdown + tier distribution ───────────────────────
+    _col_a, _col_b = st.columns(2)
+
+    with _col_a:
+        sec("By Squad")
+        _squad_g = (
+            _team_main.groupby("squad", sort=False)
+            .agg(cap_prod=("cap_prod", "sum"), delivered_sp=("delivered_sp", "sum"))
+            .reset_index()
+        )
+        _squad_g["productivity"] = (
+            _squad_g["delivered_sp"] / _squad_g["cap_prod"] * 100
+        ).round(1)
+        _squad_g = _squad_g[_squad_g["cap_prod"] > 0].sort_values("productivity", ascending=True)
+
+        _sf = go.Figure()
+        _sf.add_trace(go.Bar(
+            x=_squad_g["cap_prod"], y=_squad_g["squad"],
+            orientation="h", name="Planned JH",
+            marker_color="rgba(109,114,120,0.3)", width=0.7,
+        ))
+        _sf.add_trace(go.Bar(
+            x=_squad_g["delivered_sp"], y=_squad_g["squad"],
+            orientation="h", name="Delivered SP",
+            marker_color=DXC_PURPLE_LITE, width=0.35,
+            text=[f"{p:.0f}%" for p in _squad_g["productivity"]],
+            textposition="outside",
+        ))
+        _sf.update_layout(**{**CHART_THEME, "barmode": "overlay", "height": 320,
+                             "xaxis": dict(gridcolor=DXC_BORDER)})
+        chart(_sf)
+
+    with _col_b:
+        sec("Productivity Tier Distribution")
+        _tiers = _team_main.groupby("tier").size().reset_index(name="count")
+        _tier_order  = ["🏆 Overperformer", "✅ On Track", "⚠️ Below Target", "🔴 Needs Attention"]
+        _tier_colors = ["#4CAF50", DXC_PURPLE_LITE, "#E65100", "#C62828"]
+        _tiers["tier"] = pd.Categorical(_tiers["tier"], categories=_tier_order, ordered=True)
+        _tiers = _tiers.sort_values("tier")
+        _df_pie = go.Figure(go.Pie(
+            labels=_tiers["tier"], values=_tiers["count"],
+            hole=0.55,
+            marker=dict(colors=_tier_colors[:len(_tiers)]),
+            textinfo="label+percent", textfont=dict(size=12),
+        ))
+        _df_pie.update_layout(**{
+            **CHART_THEME, "height": 320, "showlegend": False,
+            "annotations": [dict(
+                text=f"{_team_pct:.0f}%<br><span style='font-size:10px'>team</span>",
+                font=dict(size=18, color=DXC_TEXT), showarrow=False,
+            )],
+        })
+        chart(_df_pie)
+
+    st.markdown("---")
+
+    # ── Unplanned Delivery section ─────────────────────────────────────────────
+    # People with cap_prod=0 (fully on transverse/vacation) who still delivered scope tickets.
+    if not _unplanned.empty:
+        sec("Unplanned Delivery — cap_prod = 0 but tickets completed")
+        st.caption(
+            "These team members had zero planned capacity (fully allocated to "
+            "transverse tasks or vacation), yet completed scope tickets during the sprint. "
+            "Their output is not counted in team productivity % to avoid distorting the metric."
+        )
+        _up_tbl = _unplanned[["name", "squad", "delivered_sp"]].copy()
+        _up_tbl.columns = ["Name", "Squad", "Delivered (SP)"]
+        st.dataframe(_up_tbl.sort_values("Delivered (SP)", ascending=False),
+                     use_container_width=True, hide_index=True)
+        st.markdown("---")
+
+    # ── Detailed table ────────────────────────────────────────────────────────
+    sec("Full Team Breakdown")
+    _tbl = _team_main[["name", "squad", "cap_prod", "delivered_sp", "productivity", "tier"]].copy()
+    _tbl.columns = ["Name", "Squad", "Planned (JH)", "Delivered (SP)", "Productivity %", "Tier"]
+    _tbl = _tbl.sort_values("Productivity %", ascending=False)
+    st.dataframe(
+        _tbl.style.background_gradient(
+            subset=["Productivity %"], cmap="RdYlGn", vmin=0, vmax=100
+        ),
+        use_container_width=True, hide_index=True,
+    )
+
+    # ── Unmatched warning ─────────────────────────────────────────────────────
+    _unmatched = _team_main[_team_main["jira_name"].isna()]
+    if not _unmatched.empty:
+        with st.expander(f"⚠️ {len(_unmatched)} person(s) not matched to any Jira assignee"):
+            st.caption(
+                "These people have cap_prod > 0 but no scope ticket was found under their name. "
+                "Their JH counts toward planned total; delivered SP = 0."
+            )
+            st.dataframe(_unmatched[["name", "squad", "cap_prod"]], hide_index=True)
 
 
 # ── TAB: AI ASSISTANT ─────────────────────────────────────────────────────────
