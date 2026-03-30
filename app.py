@@ -554,8 +554,8 @@ with st.sidebar:
 st.markdown('<p class="page-title">Service Desk Analytics</p>', unsafe_allow_html=True)
 st.markdown('<p class="page-subtitle">Issue tracking · Performance monitoring · Sprint planning</p>', unsafe_allow_html=True)
 
-tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_team, tab_chat, tab_upload = st.tabs([
-    "Overview", "Trends", "Analysis", "SLA & KPIs", "Burndown", "Team", "AI Assistant", "Upload",
+tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_backlog, tab_team, tab_chat, tab_upload = st.tabs([
+    "Overview", "Trends", "Analysis", "SLA & KPIs", "Burndown", "Backlog Burndown", "Team", "AI Assistant", "Upload",
 ])
 
 # ── TAB 5: UPLOAD (always accessible) ─────────────────────────────────────────
@@ -648,7 +648,7 @@ with tab_upload:
         sc4.metric("Projects", df_all["project"].nunique() if "project" in df_all else "—")
 
 if not has_data:
-    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_team, tab_chat]:
+    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_backlog, tab_team, tab_chat]:
         with t:
             st.info("No data available. Go to the **Upload** tab to load your Extract file.")
     st.stop()
@@ -657,7 +657,7 @@ if not has_data:
 df = apply_filters(df_all, filters)
 
 if df.empty:
-    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_team, tab_chat]:
+    for t in [tab_overview, tab_trends, tab_analysis, tab_sla, tab_burndown, tab_backlog, tab_team, tab_chat]:
         with t:
             st.warning("No records match the current filters.")
     st.stop()
@@ -1187,6 +1187,280 @@ with tab_burndown:
             )
 
 
+# ── TAB: BACKLOG BURNDOWN ─────────────────────────────────────────────────────
+with tab_backlog:
+    import datetime as _dt
+    import numpy as _np
+
+    st.markdown("#### Production Incident Backlog Burndown")
+    st.markdown(
+        "Tracks daily resolution progress across **all production incidents**. "
+        "New tickets created each day increase the remaining count; resolved tickets decrease it."
+    )
+
+    # ── Controls ───────────────────────────────────────────────────────────────
+    _bc1, _bc2, _bc3 = st.columns(3)
+    with _bc1:
+        _bl_start = st.date_input("Track from", value=_dt.date(2026, 1, 1), key="bl_start")
+    with _bc2:
+        _bl_end = st.date_input("Track to", value=_dt.date(2026, 4, 30), key="bl_end")
+    with _bc3:
+        _bl_target = st.number_input(
+            "Target open tickets", min_value=0, max_value=10000,
+            value=261, step=10, key="bl_target",
+        )
+
+    if _bl_end <= _bl_start:
+        st.error("End date must be after start date.")
+    else:
+        # ── Filter: prod incidents only ────────────────────────────────────────
+        _bl_df = df_all[
+            (df_all["issue_type"] == "Incident") &
+            (df_all["environment_type"] == "Production")
+        ].copy()
+
+        # Closure date: use closure_date then resolved (NOT qualification_date —
+        # that field reflects a workflow step, not actual ticket closure).
+        _closed_statuses = {"Closed", "Cancelled"}
+        _bl_df["_resolved_at"] = pd.NaT
+        for _c in ["closure_date", "resolved"]:
+            if _c in _bl_df.columns:
+                _bl_df["_resolved_at"] = _bl_df["_resolved_at"].fillna(_bl_df[_c])
+
+        # A ticket is closed only when its Jira status is terminal.
+        # We use _resolved_at only to know WHEN it closed (for daily tracking).
+        # For tickets with no closure date, fall back to created date as a proxy
+        # so the daily loop can correctly attribute the closure day.
+        _bl_df["_is_closed"] = _bl_df["status"].isin(_closed_statuses)
+
+        _start_ts = pd.Timestamp(_bl_start)
+        _end_ts   = pd.Timestamp(_bl_end) + pd.Timedelta(hours=23, minutes=59)
+        _today_ts = pd.Timestamp(_dt.date.today())
+
+        # ── Build daily net remaining ──────────────────────────────────────────
+        _days = pd.date_range(start=_bl_start, end=_bl_end, freq="D")
+        _remaining, _opened_pd, _closed_pd = [], [], []
+
+        for _day in _days:
+            _d_end = _day + pd.Timedelta(hours=23, minutes=59)
+            # Open on this day = created on or before day AND not yet closed by end of day
+            _open = _bl_df[
+                (_bl_df["created"] <= _d_end) &
+                (~_bl_df["_is_closed"] | (_bl_df["_resolved_at"] > _d_end))
+            ]
+            _remaining.append(len(_open))
+            _opened_pd.append(int((_bl_df["created"] >= _day) & (_bl_df["created"] <= _d_end)).sum() if False else
+                              len(_bl_df[(_bl_df["created"] >= _day) & (_bl_df["created"] <= _d_end)]))
+            _closed_pd.append(
+                len(_bl_df[_bl_df["_resolved_at"].notna() &
+                           (_bl_df["_resolved_at"] >= _day) &
+                           (_bl_df["_resolved_at"] <= _d_end)])
+            )
+
+        _burn_df = pd.DataFrame({
+            "Date": _days, "Remaining": _remaining,
+            "Opened": _opened_pd, "Closed": _closed_pd,
+        })
+        _actual = _burn_df[_burn_df["Date"] <= _today_ts].copy()
+
+        # ── Trend / forecast ──────────────────────────────────────────────────
+        _forecast_date, _daily_rate, _forecast_df = None, None, pd.DataFrame(columns=["Date", "Forecast"])
+        if len(_actual) >= 7:
+            _recent = _actual.tail(14)
+            _x = _np.arange(len(_recent))
+            _y = _recent["Remaining"].values.astype(float)
+            _slope, _intercept = _np.polyfit(_x, _y, 1)
+            _daily_rate = -_slope
+            if _slope < 0:
+                _days_needed = (_recent["Remaining"].iloc[-1] - _bl_target) / (-_slope)
+                if _days_needed > 0:
+                    _forecast_date = (_recent["Date"].iloc[-1] + pd.Timedelta(days=int(_days_needed))).date()
+            _fc_days = pd.date_range(_actual["Date"].iloc[-1], _days[-1], freq="D")
+            _fc_vals = [max(0, float(_actual["Remaining"].iloc[-1]) + _slope * i) for i in range(len(_fc_days))]
+            _forecast_df = pd.DataFrame({"Date": _fc_days, "Forecast": _fc_vals})
+
+        # ── KPI cards ─────────────────────────────────────────────────────────
+        _current_open = int(_actual["Remaining"].iloc[-1]) if len(_actual) else 0
+        _gap          = _current_open - _bl_target
+        _net_progress = int(_actual["Closed"].sum() - _actual["Opened"].sum()) if len(_actual) else 0
+
+        _bk1, _bk2, _bk3, _bk4, _bk5 = st.columns(5)
+        with _bk1: kpi_card("Currently Open", f"{_current_open:,}",
+                             color="#C62828" if _current_open > _bl_target else "#4CAF50")
+        with _bk2: kpi_card("Target", f"{_bl_target:,} by {_bl_end.strftime('%d %b')}")
+        with _bk3: kpi_card("Gap to Target", f"{_gap:+,}",
+                             color="#C62828" if _gap > 0 else "#4CAF50")
+        with _bk4: kpi_card("Net Resolved (period)", f"{_net_progress:+,}",
+                             color="#4CAF50" if _net_progress > 0 else "#C62828")
+        with _bk5:
+            if _forecast_date:
+                kpi_card("Projected Date", _forecast_date.strftime("%d %b %Y"),
+                         color="#4CAF50" if _forecast_date <= _bl_end else "#C62828")
+            elif _daily_rate is not None and _daily_rate <= 0:
+                kpi_card("Projected Date", "Not improving", color="#C62828")
+            else:
+                kpi_card("Projected Date", "—")
+
+        st.markdown("---")
+
+        # ── Main burndown chart ────────────────────────────────────────────────
+        sec("Daily Open Incidents — Net Remaining")
+
+        _fig_bl = go.Figure()
+        # Target line
+        _fig_bl.add_trace(go.Scatter(
+            x=[_days[0], _days[-1]],
+            y=[_actual["Remaining"].iloc[0] if len(_actual) else _bl_target, _bl_target],
+            mode="lines", name=f"Target ({_bl_target:,})",
+            line=dict(color="#4CAF50", width=2, dash="dot"),
+        ))
+        # Trend forecast
+        if len(_forecast_df) > 1:
+            _fig_bl.add_trace(go.Scatter(
+                x=_forecast_df["Date"], y=_forecast_df["Forecast"],
+                mode="lines", name="Trend (14-day)",
+                line=dict(color=DXC_GREY_LIGHT, width=2, dash="dash"),
+            ))
+        # Actual
+        _fig_bl.add_trace(go.Scatter(
+            x=_actual["Date"], y=_actual["Remaining"],
+            mode="lines+markers", name="Actual Open",
+            line=dict(color=DXC_PURPLE_LITE, width=3),
+            marker=dict(size=4),
+            fill="tozeroy", fillcolor="rgba(109,32,119,0.10)",
+            hovertemplate="%{x|%d %b}<br>Open: %{y:,}<extra></extra>",
+        ))
+        # Today marker
+        if len(_actual):
+            _today_x = str(_actual["Date"].iloc[-1].date())
+            _fig_bl.add_shape(type="line", x0=_today_x, x1=_today_x,
+                              y0=0, y1=1, yref="paper",
+                              line=dict(color=DXC_GREY, width=1, dash="dash"))
+            _fig_bl.add_annotation(x=_today_x, y=1, yref="paper",
+                                   text="Today", showarrow=False,
+                                   font=dict(color=DXC_GREY_LIGHT, size=11),
+                                   xanchor="left", yanchor="top")
+        _fig_bl.update_layout(**{
+            **CHART_THEME, "height": 420,
+            "yaxis": dict(title="Open Incidents", gridcolor=DXC_BORDER),
+            "hovermode": "x unified",
+            "legend": dict(orientation="h", y=1.05, x=0),
+        })
+        chart(_fig_bl)
+
+        st.markdown("---")
+
+        # ── Daily opened vs closed ─────────────────────────────────────────────
+        sec("Daily Opened vs Closed")
+        _fig_oc = go.Figure()
+        _fig_oc.add_trace(go.Bar(
+            x=_actual["Date"], y=_actual["Opened"],
+            name="Opened", marker_color="#C62828", opacity=0.85,
+        ))
+        _fig_oc.add_trace(go.Bar(
+            x=_actual["Date"], y=-_actual["Closed"],
+            name="Closed", marker_color="#4CAF50", opacity=0.85,
+        ))
+        _fig_oc.update_layout(**{
+            **CHART_THEME, "barmode": "relative", "height": 280,
+            "yaxis": dict(title="Tickets", gridcolor=DXC_BORDER),
+            "hovermode": "x unified",
+            "legend": dict(orientation="h", y=1.05, x=0),
+        })
+        chart(_fig_oc)
+
+        st.markdown("---")
+
+        # ── Assignee breakdown ─────────────────────────────────────────────────
+        sec("By Assignee")
+        _bl_open_now = _bl_df[
+            (_bl_df["created"] <= _today_ts) &
+            (~_bl_df["_is_closed"] | (_bl_df["_resolved_at"] > _today_ts))
+        ].copy()
+        _bl_closed_period = _bl_df[
+            _bl_df["_resolved_at"].notna() &
+            (_bl_df["_resolved_at"] >= _start_ts) &
+            (_bl_df["_resolved_at"] <= _today_ts)
+        ].copy()
+
+        _col_open, _col_closed = st.columns(2)
+        with _col_open:
+            st.caption(f"Currently open — {len(_bl_open_now):,} incidents")
+            _open_by = (_bl_open_now.groupby("assignee", dropna=True).size()
+                        .reset_index(name="open").sort_values("open", ascending=False).head(15))
+            _fig_op = go.Figure(go.Bar(
+                x=_open_by["open"], y=_open_by["assignee"], orientation="h",
+                marker_color=DXC_PURPLE_LITE,
+                text=_open_by["open"], textposition="outside",
+            ))
+            _fig_op.update_layout(**{**CHART_THEME, "height": 440,
+                                    "xaxis": dict(gridcolor=DXC_BORDER),
+                                    "yaxis": dict(autorange="reversed"),
+                                    "margin": dict(t=10, b=10, l=10, r=60)})
+            chart(_fig_op)
+
+        with _col_closed:
+            st.caption(f"Closed in period — {len(_bl_closed_period):,} incidents")
+            _closed_by = (_bl_closed_period.groupby("assignee", dropna=True).size()
+                          .reset_index(name="closed").sort_values("closed", ascending=False).head(15))
+            _fig_cl = go.Figure(go.Bar(
+                x=_closed_by["closed"], y=_closed_by["assignee"], orientation="h",
+                marker_color="#4CAF50",
+                text=_closed_by["closed"], textposition="outside",
+            ))
+            _fig_cl.update_layout(**{**CHART_THEME, "height": 440,
+                                    "xaxis": dict(gridcolor=DXC_BORDER),
+                                    "yaxis": dict(autorange="reversed"),
+                                    "margin": dict(t=10, b=10, l=10, r=60)})
+            chart(_fig_cl)
+
+        st.markdown("---")
+
+        # ── Age + Priority ─────────────────────────────────────────────────────
+        _col_age, _col_prio = st.columns(2)
+
+        with _col_age:
+            sec("Age of Open Tickets")
+            _bl_open_now["_age_days"] = (_today_ts - _bl_open_now["created"]).dt.days
+            _bins   = [0, 7, 30, 60, 90, 180, 9999]
+            _lbls   = ["< 1 week", "1–4 weeks", "1–2 months", "2–3 months", "3–6 months", "> 6 months"]
+            _bl_open_now["_age_bucket"] = pd.cut(_bl_open_now["_age_days"], bins=_bins, labels=_lbls, right=False)
+            _age_c = _bl_open_now.groupby("_age_bucket", observed=True).size().reset_index(name="count")
+            _age_colors = ["#4CAF50", DXC_PURPLE_LITE, "#E65100", "#C62828", "#7B1FA2", "#37474F"]
+            _fig_age = go.Figure(go.Bar(
+                x=_age_c["_age_bucket"].astype(str), y=_age_c["count"],
+                marker_color=_age_colors[:len(_age_c)],
+                text=_age_c["count"], textposition="outside",
+            ))
+            _fig_age.update_layout(**{**CHART_THEME, "height": 300,
+                                     "yaxis": dict(gridcolor=DXC_BORDER)})
+            chart(_fig_age)
+
+        with _col_prio:
+            sec("Open Tickets by Priority")
+            _prio_c = (_bl_open_now.groupby("priority", dropna=True).size()
+                       .reset_index(name="count").sort_values("count", ascending=True))
+            _pcmap  = {"Critical": "#C62828", "High": "#E65100",
+                       "Medium": DXC_PURPLE_LITE, "Low": DXC_GREY}
+            _fig_pr = go.Figure(go.Bar(
+                x=_prio_c["count"], y=_prio_c["priority"], orientation="h",
+                marker_color=[_pcmap.get(p, DXC_GREY) for p in _prio_c["priority"]],
+                text=_prio_c["count"], textposition="outside",
+            ))
+            _fig_pr.update_layout(**{**CHART_THEME, "height": 300,
+                                    "xaxis": dict(gridcolor=DXC_BORDER),
+                                    "margin": dict(t=10, b=10, l=10, r=60)})
+            chart(_fig_pr)
+
+        # ── Daily detail table ─────────────────────────────────────────────────
+        with st.expander("Daily breakdown table"):
+            _tbl_df = _actual[["Date", "Remaining", "Opened", "Closed"]].copy()
+            _tbl_df["Net"] = _tbl_df["Closed"] - _tbl_df["Opened"]
+            _tbl_df["Date"] = _tbl_df["Date"].dt.strftime("%Y-%m-%d")
+            st.dataframe(_tbl_df.sort_values("Date", ascending=False),
+                         use_container_width=True, hide_index=True)
+
+
 # ── TAB: TEAM PRODUCTIVITY ────────────────────────────────────────────────────
 with tab_team:
     st.markdown("#### Team Productivity — R25")
@@ -1247,45 +1521,41 @@ with tab_team:
 
     st.markdown("---")
 
-    # ── Delivered SP per Jira assignee (within sprint window) ─────────────────
-    _delivered_agg = (
-        _df_m[_df_m["_delivered"]]
-        .groupby("assignee", dropna=True)["_pts"]
-        .sum()
-        .reset_index()
-        .rename(columns={"assignee": "jira_name", "_pts": "delivered_sp"})
-    )
-    _jira_names     = _delivered_agg["jira_name"].tolist()
     # SP ceiling: all delivered scope tickets (includes unassigned / unmatched)
     _total_delivered_scope = float(_df_m[_df_m["_delivered"]]["_pts"].sum())
 
-    # ── Exclusive one-to-one matching: each Jira assignee → one avail person ──
-    # Problem with naive approach: multiple avail people can score > threshold
-    # against the same Jira name, causing the same SP to be credited many times.
-    # Fix: compute all pairwise scores, then greedily assign each Jira name to
-    # its single best-matching avail person (highest score wins, exclusive).
-    _unique_avail_names = avail_df["name"].drop_duplicates().tolist()
+    # ── Exclusive one-to-one matching against ALL scope assignees ──────────────
+    # Critical fix: match against ALL assignees in scope (delivered or not).
+    # If we only match against delivered assignees, people with no delivered
+    # tickets are absent from the pool → their avail name matches a wrong person.
+    _all_scope_assignees = _df_m["assignee"].dropna().unique().tolist()
+    _unique_avail_names  = avail_df["name"].drop_duplicates().tolist()
+
     _pair_scores = []
-    for _jn in _jira_names:
+    for _jn in _all_scope_assignees:
         for _an in _unique_avail_names:
             _s = _name_score(_jn, _an)
             if _s >= 0.35:
                 _pair_scores.append({"jira": _jn, "avail": _an, "score": _s})
 
-    # Sort descending by score; assign each Jira name to its top-scoring avail person
+    # Greedy exclusive: each Jira name → its single best-matching avail person
     _jira_to_avail: dict = {}
     for _p in sorted(_pair_scores, key=lambda x: -x["score"]):
         if _p["jira"] not in _jira_to_avail:
             _jira_to_avail[_p["jira"]] = _p["avail"]
 
-    # Sum SP per avail person (an avail person can receive multiple Jira names' SP)
-    _avail_sp_map: dict = {}
-    _avail_jira_map: dict = {}
+    # Invert: avail person → list of their matched Jira names
+    _avail_to_jiras: dict = {}
     for _jn, _an in _jira_to_avail.items():
-        _row = _delivered_agg[_delivered_agg["jira_name"] == _jn]
-        if len(_row):
-            _avail_sp_map[_an]  = _avail_sp_map.get(_an, 0.0) + float(_row["delivered_sp"].values[0])
-            _avail_jira_map.setdefault(_an, []).append(_jn)
+        _avail_to_jiras.setdefault(_an, []).append(_jn)
+
+    # Delivered SP per avail person = sum of delivered tickets by their jira names
+    _delivered_tickets = _df_m[_df_m["_delivered"]].copy()
+    _avail_sp_map: dict = {}
+    _avail_jira_map: dict = _avail_to_jiras  # for display
+    for _an, _jiras in _avail_to_jiras.items():
+        _sp = float(_delivered_tickets[_delivered_tickets["assignee"].isin(_jiras)]["_pts"].sum())
+        _avail_sp_map[_an] = _sp
 
     # ── Build raw person rows from availability sheet ──────────────────────────
     _raw_rows = []
