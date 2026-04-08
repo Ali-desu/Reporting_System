@@ -1,0 +1,251 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{mdframed}
+\usepackage{courier}
+
+\definecolor{dxcpurple}{RGB}{102, 0, 153}
+\definecolor{blockbg}{RGB}{248, 242, 255}
+\definecolor{greytext}{RGB}{90, 90, 90}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{dxcpurple}{\textbf{DXC Technology}}}
+\fancyhead[R]{\textcolor{dxcpurple}{Connexion Jira \& Field Mapping}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{dxcpurple}\leaders\hrule height \headrulewidth\hfill}}
+
+\titleformat{\section}{\large\bfseries\color{dxcpurple}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{dxcpurple}}{}{0em}{}
+
+\newmdenv[
+  backgroundcolor=blockbg,
+  linecolor=dxcpurple,
+  linewidth=1pt,
+  innerleftmargin=12pt, innerrightmargin=12pt,
+  innertopmargin=8pt, innerbottommargin=8pt,
+  roundcorner=4pt
+]{purplebox}
+
+\begin{document}
+
+% ── Title ─────────────────────────────────────────────────────────────────────
+\begin{center}
+  {\color{dxcpurple}\rule{\linewidth}{1.5pt}}\\[0.4cm]
+  {\LARGE\bfseries\color{dxcpurple} Connexion Jira REST API \& Field Mapping}\\[0.2cm]
+  {\large IRPAUTO — DXC GraphTalk Service Desk}\\[0.15cm]
+  {\normalsize\color{greytext} Guide de connexion et correspondance des colonnes Extract $\leftrightarrow$ Jira}\\[0.3cm]
+  {\color{dxcpurple}\rule{\linewidth}{1.5pt}}
+\end{center}
+
+\vspace{0.6cm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Prérequis}
+
+\begin{enumerate}[leftmargin=2em, itemsep=4pt]
+  \item Un compte Jira avec accès en lecture au projet \textbf{IRPAUTO}.
+  \item Un \textbf{API Token} Jira (généré sur \texttt{id.atlassian.com} $\to$ Security $\to$ API tokens).
+  \item L'URL de l'instance Jira : \texttt{https://dxc-insurance-delivery.atlassian.net}
+  \item Python 3.x avec les packages \texttt{requests} et \texttt{pandas}.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Étapes de Connexion}
+
+\subsection{1. Authentification}
+
+L'API Jira REST v3 utilise une authentification \textbf{Basic Auth} avec l'email du compte
+et le token API (pas le mot de passe).
+
+\begin{purplebox}
+\small\ttfamily
+auth = HTTPBasicAuth("prenom.nom@dxc.com", "VOTRE\_API\_TOKEN")\\
+headers = \{"Accept": "application/json", "Content-Type": "application/json"\}
+\end{purplebox}
+
+\subsection{2. Endpoint de recherche}
+
+Utiliser l'endpoint \textbf{POST} (la version GET est dépréciée pour de grands volumes) :
+
+\begin{purplebox}
+\small\ttfamily
+POST \{jira\_url\}/rest/api/3/search/jql
+\end{purplebox}
+
+\subsection{3. Corps de la requête}
+
+\begin{purplebox}
+\small\ttfamily
+\{\\
+\quad "jql": "project = IRPAUTO ORDER BY updated ASC",\\
+\quad "maxResults": 100,\\
+\quad "fields": [liste des field IDs ci-dessous]\\
+\}
+\end{purplebox}
+
+\subsection{4. Pagination}
+
+La réponse contient un champ \texttt{nextPageToken}. Tant qu'il est présent et que
+\texttt{isLast} est \texttt{false}, relancer la requête en ajoutant
+\texttt{"nextPageToken": valeur} au corps. Le projet IRPAUTO contient plus de
+55\,000 tickets — la pagination est obligatoire.
+
+\subsection{5. Synchronisation incrémentale}
+
+Pour ne récupérer que les tickets modifiés depuis la dernière synchronisation,
+ajouter un filtre JQL :
+
+\begin{purplebox}
+\small\ttfamily
+"jql": "project = IRPAUTO AND updated >= \textbackslash"2026-04-01\textbackslash" ORDER BY updated ASC"
+\end{purplebox}
+
+\subsection{6. Trouver l'ID d'un champ personnalisé}
+
+Pour identifier l'ID d'un champ custom (\texttt{customfield\_XXXXX}) :
+\begin{enumerate}[leftmargin=2em, itemsep=2pt]
+  \item Ouvrir n'importe quel ticket dans Jira
+  \item Ajouter \texttt{.json} à la fin de l'URL du ticket dans le navigateur
+  \item Dans le JSON, chercher le nom du champ dans la section \texttt{names} ou \texttt{fields}
+  \item Ou appeler : \texttt{GET \{jira\_url\}/rest/api/3/field} pour la liste complète
+\end{enumerate}
+
+\vspace{0.3cm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Correspondance des Champs — Extract Excel $\leftrightarrow$ Jira API}
+
+\vspace{0.3cm}
+
+\begin{longtable}{>{\bfseries\small}p{4.8cm}
+                  >{\ttfamily\small}p{4.8cm}
+                  >{\small}p{2.2cm}
+                  >{\small}p{2.4cm}}
+  \toprule
+  \normalfont\textbf{Colonne Extract Excel} &
+  \normalfont\textbf{Jira Field ID} &
+  \normalfont\textbf{Type} &
+  \normalfont\textbf{Format retourné} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  % ── Standard fields ────────────────────────────────────────────────────────
+  \multicolumn{4}{l}{\textit{\color{dxcpurple}Champs standard}} \\[3pt]
+  Key                        & issuekey              & Standard & string \\
+  Issue Type                 & issuetype             & Standard & objet $\to$ name \\
+  Summary                    & summary               & Standard & string \\
+  Assignee                   & assignee              & Standard & objet $\to$ displayName \\
+  Reporter                   & reporter              & Standard & objet $\to$ displayName \\
+  Priority                   & priority              & Standard & objet $\to$ name \\
+  Status                     & status                & Standard & objet $\to$ name \\
+  Created                    & created               & Standard & ISO 8601 datetime \\
+  Resolved                   & resolutiondate        & Standard & ISO 8601 datetime \\
+  Due date                   & duedate               & Standard & date \\
+  Fix versions               & fixVersions           & Standard & liste $\to$ name \\
+  Project                    & project               & Standard & objet $\to$ name \\[6pt]
+
+  % ── Custom fields ──────────────────────────────────────────────────────────
+  \multicolumn{4}{l}{\textit{\color{dxcpurple}Champs personnalisés (custom fields)}} \\[3pt]
+  Organizations              & customfield\_10002    & Custom & liste d'objets \\
+  Customer Reference Id      & customfield\_10127    & Custom & string \\
+  Environment Type           & customfield\_10187    & Custom & objet $\to$ value \\
+  Environment                & customfield\_10238    & Custom & string \\
+  Component                  & customfield\_10171    & Custom & objet $\to$ name \\
+  Current Tier               & customfield\_10173    & Custom & objet $\to$ value \\
+  Reproductibility           & customfield\_10242    & Custom & objet $\to$ value \\
+  Resolutions                & customfield\_10301    & Custom & objet $\to$ value \\
+  Root Cause Description     & customfield\_10310    & Custom & ADF rich-text \\
+  Impact Description         & customfield\_10312    & Custom & ADF rich-text \\
+  Resolution Description     & customfield\_10311    & Custom & ADF rich-text \\
+  Last Comment Date/Time     & customfield\_10248    & Custom & ISO 8601 datetime \\
+  Client Priority            & customfield\_10303    & Custom & objet $\to$ value \\
+  Target Release             & customfield\_10179    & Custom & objet $\to$ name \\
+  Closure Date               & customfield\_10297    & Custom & ISO 8601 datetime \\
+  Qualification Date         & customfield\_10492    & Custom & ISO 8601 datetime \\
+  Count Ready for Acceptance & customfield\_10327    & Custom & number \\
+  Count Ready for Staging    & customfield\_10321    & Custom & number \\
+  Start Date \& Time         & customfield\_10317    & Custom & ISO 8601 datetime \\
+  Product Line               & customfield\_10229    & Custom & objet $\to$ value \\
+  Story Points               & customfield\_10049    & Custom & number (voir note*) \\
+  Story Points (option)      & customfield\_10520    & Custom & objet $\to$ value \\
+  Sending Date               & customfield\_10369    & Custom & ISO 8601 datetime \\
+  Occurrences                & customfield\_10381    & Custom & number \\
+  SLA Justified              & customfield\_10429    & Custom & objet $\to$ value \\
+  OUT OF SLA Reason          & customfield\_10446    & Custom & objet $\to$ value \\
+  Root Cause Origin          & customfield\_10452    & Custom & objet $\to$ value \\
+  Nombre d'UO                & customfield\_10447    & Custom & number \\
+  Service Request Types      & customfield\_10165    & Custom & objet $\to$ value \\
+  Enhancement Request Type   & customfield\_10382    & Custom & objet $\to$ value \\
+  Resolution Owner           & customfield\_11038    & Custom & objet $\to$ displayName \\
+  Expected Sprint            & customfield\_10315    & Custom & string \\
+  Original Expected Sprint   & customfield\_10642    & Custom & string \\
+  Baseline / Standard Issue  & customfield\_10305    & Custom & string \\[6pt]
+
+  % ── SLA fields ─────────────────────────────────────────────────────────────
+  \multicolumn{4}{l}{\textit{\color{dxcpurple}Champs SLA (retournés comme objets complexes)}} \\[3pt]
+  KPI - Time to Solve        & customfield\_10186    & SLA & objet SLA cycle \\
+  KPI - Time Initial Response & customfield\_10185   & SLA & objet SLA cycle \\
+  KPI - Time to Analyse      & customfield\_10485    & SLA & objet SLA cycle \\
+  KPI - Time to Assist       & customfield\_10428    & SLA & objet SLA cycle \\
+  KPI - Time to Estimate     & customfield\_10293    & SLA & objet SLA cycle \\
+
+\end{longtable}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Notes Importantes}
+
+\begin{enumerate}[leftmargin=2em, itemsep=6pt]
+
+  \item \textbf{Story Points — double champ :}
+        Pour les tickets IRPAUTO, \texttt{customfield\_10049} (numérique) est vide
+        sur environ 82\% des tickets. Les vraies valeurs se trouvent dans
+        \texttt{customfield\_10520} (liste déroulante). Il faut lire les deux et
+        fusionner : prendre \texttt{10049} en priorité, et remplir les NULL avec
+        la valeur numérique extraite de \texttt{10520}.
+
+  \item \textbf{Champs ADF (rich-text) :}
+        Les champs de type description (Root Cause Description, Impact Description,
+        etc.) sont retournés au format \textbf{Atlassian Document Format (ADF)},
+        une structure JSON imbriquée. Il faut les parcourir récursivement pour
+        en extraire le texte brut.
+
+  \item \textbf{Champs SLA :}
+        L'API retourne des objets SLA complexes contenant des cycles de temps, pas
+        les chaînes formatées ``Xh Ym'' visibles dans l'export Excel. Stocker en
+        NULL ou implémenter un parseur dédié si nécessaire.
+
+  \item \textbf{Dates :}
+        Toutes les dates Jira sont retournées en ISO 8601 avec offset timezone
+        (ex. \texttt{2026-03-15T14:30:00+0200}). Les convertir en datetime
+        timezone-aware puis supprimer la timezone pour la base de données :
+        \texttt{pd.to\_datetime(..., utc=True).dt.tz\_convert(None)}.
+
+  \item \textbf{Champs objet :}
+        La plupart des champs personnalisés retournent un dictionnaire JSON.
+        Extraire selon le type : \texttt{name} pour les listes, \texttt{displayName}
+        pour les utilisateurs, \texttt{value} pour les listes déroulantes.
+
+\end{enumerate}
+
+\vspace{0.5cm}
+\noindent{\color{dxcpurple}\rule{\linewidth}{0.8pt}}
+\begin{center}
+  \small\color{greytext}
+  Document interne — DXC Technology · Projet IRPAUTO
+\end{center}
+
+\end{document}

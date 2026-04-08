@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, text, inspect
 
 from etl import (clean_data, upsert, initial_load, build_engine, get_engine,
                  load_release_lifecycle, materialise_r25_burndown, materialise_backlog_burndown,
-                 fetch_jira_issues, materialise_r25_team_commitment)
+                 fetch_jira_issues, materialise_r25_team_commitment, append_r25_full_burndown)
 from agent import run_agent, check_api_key
 
 load_dotenv()
@@ -1196,13 +1196,12 @@ with tab_burndown:
     df_merged["_points"] = df_merged["_points"].fillna(
         pd.to_numeric(df_merged["scope_points"], errors="coerce")
     )
-    # Raw completion date: first non-null of qualification_date → resolved → closure_date
-    df_merged["_resolved_at_raw"] = pd.NaT
-    for _col in ["qualification_date", "resolved", "closure_date"]:
-        if _col in df_merged.columns:
-            df_merged["_resolved_at_raw"] = df_merged["_resolved_at_raw"].fillna(
-                pd.to_datetime(df_merged[_col], errors="coerce")
-            )
+    # Earliest date among qualification_date, resolved, closure_date
+    # (computed here as raw; sprint filtering applied below after dates are known)
+    _date_cols = [c for c in ["qualification_date", "resolved", "closure_date"] if c in df_merged.columns]
+    df_merged["_resolved_at_raw"] = pd.concat(
+        [pd.to_datetime(df_merged[c], errors="coerce") for c in _date_cols], axis=1
+    ).min(axis=1)
 
     # ── Sprint date selector ───────────────────────────────────────────────────
     if st.button("Load R25  (08 Mar → 04 Apr 2026)", key="load_r25"):
@@ -1219,11 +1218,10 @@ with tab_burndown:
                                    value=st.session_state.get("burn_end", QUICK_END),
                                    key="burn_end")
 
-    # Status-based delivery: a ticket is "done" if and only if its current
-    # status is in DELIVERED_STATUSES (same set as the Team tab).
-    # Dates are used only to place the ticket on the timeline; any date is
-    # accepted as long as the status qualifies. Tickets with no date but a
-    # delivered status are placed on today (capped at sprint_end).
+    # A ticket counts in the burndown only if:
+    #   1. status ∈ DELIVERED_STATUSES
+    #   2. earliest date falls within [sprint_start, sprint_end]
+    # Tickets delivered outside the sprint window are excluded entirely.
     _DELIVERED_STATUSES_BD = {
         "closed", "qualification test", "ready for staging",
         "ready for exceptions", "ready for qa", "ready for sprint",
@@ -1235,11 +1233,32 @@ with tab_burndown:
     _is_done = df_merged["status"].str.lower().str.strip().isin(_DELIVERED_STATUSES_BD) \
                if "status" in df_merged.columns \
                else pd.Series(False, index=df_merged.index)
-    _raw = df_merged["_resolved_at_raw"]
-    # Use date if ticket is delivered; for delivered tickets with no date, use today capped at sprint_end
-    _today_ts = min(pd.Timestamp("today").normalize(), _sp_end_ts)
-    _effective_date = _raw.where(_raw.notna(), _today_ts)
-    df_merged["_resolved_at"] = _effective_date.where(_is_done, pd.NaT)
+    # Per date column: keep only if within sprint
+    for _dc in _date_cols:
+        _ts = pd.to_datetime(df_merged[_dc], errors="coerce")
+        df_merged[_dc + "_ts"] = _ts
+        df_merged[_dc + "_in"] = _ts.where(_ts.notna() & (_ts >= _sp_start_ts) & (_ts <= _sp_end_ts))
+
+    # Earliest date within sprint
+    df_merged["_resolved_at"] = pd.concat(
+        [df_merged[_dc + "_in"] for _dc in _date_cols], axis=1
+    ).min(axis=1)
+
+    # Earliest raw date (any) — for exclusion classification
+    df_merged["_any_date"] = pd.concat(
+        [df_merged[_dc + "_ts"] for _dc in _date_cols], axis=1
+    ).min(axis=1)
+
+    # Final gate: delivered status AND date within sprint
+    df_merged["_resolved_at"] = df_merged["_resolved_at"].where(_is_done, pd.NaT)
+
+    # NO_DATE tickets: delivered status but all dates are null → place at last day of sprint
+    _no_date_mask = _is_done & df_merged["_resolved_at"].isna() & df_merged["_any_date"].isna()
+    df_merged.loc[_no_date_mask, "_resolved_at"] = _sp_end_ts
+
+    # Excluded tickets: delivered status but date exists and is outside sprint (DATE_OUTSIDE_SPRINT only)
+    _bd_excluded = df_merged[_is_done & df_merged["_resolved_at"].isna()].copy()
+    _bd_excluded["exclusion_reason"] = "DATE_OUTSIDE_SPRINT"
 
     if sprint_end <= sprint_start:
         st.error("End date must be after start date.")
@@ -1374,6 +1393,31 @@ with tab_burndown:
                        f"{min(_sol_start + _sol_page_size, len(_sol_display))} "
                        f"of {len(_sol_display)} solved tickets")
 
+        # ── Excluded tickets warning ───────────────────────────────────────────
+        if not _bd_excluded.empty:
+            st.markdown("---")
+            with st.expander(
+                f"⚠️ {len(_bd_excluded)} delivered ticket(s) excluded from burndown "
+                f"— all dates fall outside the sprint window",
+                expanded=True,
+            ):
+                st.caption(
+                    "These tickets have a delivered status but all their dates (qualification, "
+                    "resolved, closure) fall outside the sprint window — they cannot be placed "
+                    "on the burndown curve. Tickets with no date at all are counted on the last day. "
+                    "Please update dates in Jira and re-sync."
+                )
+                _excl_show = _bd_excluded[[
+                    c for c in ["key", "summary", "assignee", "status",
+                                "qualification_date", "resolved", "closure_date",
+                                "exclusion_reason"]
+                    if c in _bd_excluded.columns
+                ]].copy()
+                for _dc in ["qualification_date", "resolved", "closure_date"]:
+                    if _dc in _excl_show.columns:
+                        _excl_show[_dc] = pd.to_datetime(_excl_show[_dc], errors="coerce").dt.strftime("%Y-%m-%d")
+                st.dataframe(_excl_show, use_container_width=True, hide_index=True)
+
         # ── Scope issues table ─────────────────────────────────────────────────
         st.markdown("---")
         sec(f"Committed Scope Issues ({len(df_merged)})")
@@ -1427,6 +1471,246 @@ with tab_burndown:
                 ),
                 use_container_width=True, hide_index=True,
             )
+
+        # ── ALL TICKETS BURNDOWN ───────────────────────────────────────────────
+        st.markdown("---")
+        sec("Burndown — All Tickets Resolved During Sprint")
+        st.caption(
+            "Shows every Jira ticket with a delivered status whose **earliest date within "
+            "the sprint** (qualification → resolved → closure) falls inside the sprint window. "
+            "Not limited to committed scope."
+        )
+
+        if sprint_start and sprint_end:
+            _DELIVERED_ALL = {
+                "closed", "qualification test", "ready for staging",
+                "ready for exceptions", "ready for qa", "ready for sprint",
+                "cancelled", "canceled", "on hold", "plan investigation", "work approved",
+                "ready for acceptance", "waiting for customer",
+            }
+            _all_db_cols = ["key", "summary", "issue_type", "priority", "status",
+                            "story_points", "assignee", "qualification_date",
+                            "resolved", "closure_date"]
+
+            # ── Build pool: committed scope UNION team tickets resolved during sprint ──
+            # Start with all DB tickets filtered by sidebar (project etc.)
+            _all_df = df[[c for c in _all_db_cols if c in df.columns]].copy()
+
+            # Filter to team members only
+            _avail_df_bd, _ = load_team_availability()
+            _avail_names_bd = _avail_df_bd["name"].drop_duplicates().tolist()
+            _all_assignees  = _all_df["assignee"].dropna().unique().tolist()
+            _team_jira_names = set()
+            for _jn in _all_assignees:
+                for _an in _avail_names_bd:
+                    if _name_score(_jn, _an) >= 0.65:
+                        _team_jira_names.add(_jn)
+                        break
+            # Team tickets (resolved by team members during sprint)
+            _team_df = _all_df[_all_df["assignee"].isin(_team_jira_names)].copy()
+
+            # Committed scope tickets (the 42) — include even if assignee not matched
+            _scope_db_cols = ["key", "summary", "issue_type", "priority", "status",
+                              "story_points", "assignee", "qualification_date",
+                              "resolved", "closure_date"]
+            _scope_from_db = df_all[df_all["key"].isin(scope_keys)][
+                [c for c in _scope_db_cols if c in df_all.columns]
+            ].copy()
+
+            # Union: committed scope + team tickets (deduplicate by key)
+            _combined = pd.concat([_scope_from_db, _team_df], ignore_index=True) \
+                          .drop_duplicates(subset="key", keep="first")
+
+            # Fall back to scope file points for committed tickets missing Jira points
+            _combined = _combined.merge(scope_df[["key", "scope_points"]], on="key", how="left")
+            _combined["story_points"] = pd.to_numeric(_combined["story_points"], errors="coerce") \
+                .fillna(pd.to_numeric(_combined.get("scope_points", pd.Series(dtype=float)), errors="coerce"))
+
+            # In-scope flag
+            _combined["in_scope"] = _combined["key"].isin(scope_keys)
+
+            _all_sp_s = pd.Timestamp(sprint_start)
+            _all_sp_e = pd.Timestamp(sprint_end) + pd.Timedelta(hours=23, minutes=59)
+
+            # Per date column: keep only if within sprint window
+            _all_date_cols = [c for c in ["qualification_date", "resolved", "closure_date"]
+                              if c in _combined.columns]
+            for _adc in _all_date_cols:
+                _ts = pd.to_datetime(_combined[_adc], errors="coerce")
+                _combined[_adc + "_in"] = _ts.where(
+                    _ts.notna() & (_ts >= _all_sp_s) & (_ts <= _all_sp_e)
+                )
+
+            # Earliest date within sprint (Option A)
+            _combined["_resolved_at"] = pd.concat(
+                [_combined[_adc + "_in"] for _adc in _all_date_cols], axis=1
+            ).min(axis=1)
+
+            # Status gate
+            _combined_is_done = _combined["status"].str.lower().str.strip().isin(_DELIVERED_ALL) \
+                                if "status" in _combined.columns \
+                                else pd.Series(False, index=_combined.index)
+            _combined["_resolved_at"] = _combined["_resolved_at"].where(_combined_is_done, pd.NaT)
+
+            # NO_DATE: delivered but all dates null → place at last day of sprint
+            _combined["_any_date_ft"] = pd.concat(
+                [pd.to_datetime(_combined[_adc], errors="coerce") for _adc in _all_date_cols], axis=1
+            ).min(axis=1)
+            _no_date_ft = _combined_is_done & _combined["_resolved_at"].isna() & _combined["_any_date_ft"].isna()
+            _combined.loc[_no_date_ft, "_resolved_at"] = _all_sp_e
+
+            # Weight
+            _combined["_weight"] = pd.to_numeric(_combined["story_points"], errors="coerce").fillna(0) \
+                                   if burn_mode == "Story Points" else 1.0
+
+            # Total pool = all tickets in combined (committed scope always in, out-of-scope only if resolved)
+            _scope_pool_all  = _combined[_combined["in_scope"]].copy()
+            _extra_resolved  = _combined[~_combined["in_scope"] & _combined["_resolved_at"].notna()].copy()
+            _full_pool       = pd.concat([_scope_pool_all, _extra_resolved], ignore_index=True)
+
+            _all_total = _full_pool["_weight"].sum()
+            _all_resolved_n = _full_pool["_resolved_at"].notna().sum()
+
+            # Daily remaining
+            _all_days = pd.date_range(start=sprint_start, end=sprint_end, freq="D")
+            _all_remaining = []
+            for _aday in _all_days:
+                _aday_end = pd.Timestamp(_aday) + pd.Timedelta(hours=23, minutes=59)
+                _done_by = _full_pool[_full_pool["_resolved_at"].notna() &
+                                      (_full_pool["_resolved_at"] <= _aday_end)]["_weight"].sum()
+                _all_remaining.append(_all_total - _done_by)
+
+            _all_burn_df = pd.DataFrame({"Date": _all_days, "Remaining": _all_remaining})
+            _all_n = len(_all_days)
+            _all_burn_df["Ideal"] = [
+                _all_total * (1 - i / (_all_n - 1)) for i in range(_all_n)
+            ] if _all_n > 1 else [0]
+
+            # KPIs
+            _all_pct = _all_resolved_n / len(_full_pool) * 100 if len(_full_pool) > 0 else 0
+            _ak1, _ak2, _ak3, _ak4 = st.columns(4)
+            with _ak1: kpi_card("Total Pool", f"{len(_full_pool)} tickets")
+            with _ak2: kpi_card("Committed Scope", f"{len(_scope_pool_all)} tickets")
+            with _ak3: kpi_card("Extra (out of scope)", f"{len(_extra_resolved)} tickets")
+            with _ak4: kpi_card("Resolved", f"{_all_resolved_n} ({_all_pct:.0f}%)",
+                                color=DXC_PURPLE_LITE if _all_pct >= 80 else "#E65100")
+
+            # Chart
+            _all_fig = go.Figure()
+            _all_fig.add_trace(go.Scatter(
+                x=_all_burn_df["Date"], y=_all_burn_df["Ideal"],
+                mode="lines", name="Ideal",
+                line=dict(color=DXC_GREY, width=2, dash="dash"),
+            ))
+            _all_fig.add_trace(go.Scatter(
+                x=_all_burn_df["Date"], y=_all_burn_df["Remaining"],
+                mode="lines+markers+text", name="Actual Remaining",
+                line=dict(color=DXC_PURPLE_LITE, width=3),
+                marker=dict(size=6),
+                fill="tozeroy", fillcolor="rgba(109,32,119,0.12)",
+                text=[f"{v:.1f}" for v in _all_burn_df["Remaining"]],
+                textposition="top center",
+                textfont=dict(color=DXC_PURPLE_LITE, size=11),
+            ))
+            _all_fig.update_layout(
+                yaxis=dict(title=f"Remaining ({unit})", gridcolor=_GRID),
+                hovermode="x unified", **CHART_THEME,
+            )
+            chart(_all_fig)
+
+            # ── Save to DB ────────────────────────────────────────────────────
+            st.markdown("---")
+            if st.button("Save Sprint Burndowns to DB (Committed + Full Team)", key="save_full_burn"):
+                with st.spinner("Saving…"):
+                    # Step 1: Committed burndown — drops & recreates r25_burndown + r25_sprint_tickets
+                    materialise_r25_burndown(_engine())
+
+                    # Step 2: Build Full Team burndown rows
+                    _sp_total_ft  = pd.to_numeric(_full_pool["story_points"], errors="coerce").fillna(0).sum()
+                    _tkt_total_ft = len(_full_pool)
+                    _ft_rows = []
+                    for _i, _aday in enumerate(_all_days):
+                        _aday_end = pd.Timestamp(_aday) + pd.Timedelta(hours=23, minutes=59)
+                        _res_sp  = pd.to_numeric(
+                            _full_pool[_full_pool["_resolved_at"].notna() &
+                                       (_full_pool["_resolved_at"] <= _aday_end)]["story_points"],
+                            errors="coerce").fillna(0).sum()
+                        _res_tkt = int(_full_pool[_full_pool["_resolved_at"].notna() &
+                                                   (_full_pool["_resolved_at"] <= _aday_end)].shape[0])
+                        _ideal_sp  = _sp_total_ft  * (1 - _i / (_all_n - 1)) if _all_n > 1 else 0
+                        _ideal_tkt = _tkt_total_ft * (1 - _i / (_all_n - 1)) if _all_n > 1 else 0
+                        _ft_rows.append({
+                            "date":               _aday.date(),
+                            "scope_type":         "Full Team",
+                            "total_pts":          round(_sp_total_ft, 2),
+                            "resolved_pts":       round(float(_res_sp), 2),
+                            "remaining_pts":      round(float(_sp_total_ft - _res_sp), 2),
+                            "ideal_pts":          round(_ideal_sp, 4),
+                            "pct_complete":       round(_res_sp / _sp_total_ft * 100, 2) if _sp_total_ft else 0,
+                            "total_tickets":      _tkt_total_ft,
+                            "resolved_tickets":   _res_tkt,
+                            "remaining_tickets":  _tkt_total_ft - _res_tkt,
+                            "ideal_tickets":      round(_ideal_tkt, 4),
+                            "pct_complete_tickets": round(_res_tkt / _tkt_total_ft * 100, 2) if _tkt_total_ft else 0,
+                        })
+                    _ft_burn_df = pd.DataFrame(_ft_rows)
+
+                    # Step 3: Build unified ticket table
+                    _DELIVERED_SET_SAVE = {
+                        "closed", "qualification test", "ready for staging",
+                        "ready for exceptions", "ready for qa", "ready for sprint",
+                        "cancelled", "canceled", "on hold", "plan investigation", "work approved",
+                        "ready for acceptance", "waiting for customer",
+                    }
+                    _tkt_out_cols = [c for c in ["key", "summary", "assignee", "status",
+                                                  "story_points", "in_scope", "_resolved_at",
+                                                  "qualification_date", "resolved", "closure_date"]
+                                     if c in _full_pool.columns]
+                    _save_tkt_df = _full_pool[_tkt_out_cols].rename(
+                        columns={"_resolved_at": "completed_at"}
+                    ).copy()
+                    _save_tkt_df["is_delivered"] = _save_tkt_df["status"].str.lower().str.strip() \
+                                                     .isin(_DELIVERED_SET_SAVE).astype(int)
+                    _save_tkt_df["in_scope"]     = _save_tkt_df["in_scope"].astype(int)
+                    for _dc in ["completed_at", "qualification_date", "resolved", "closure_date"]:
+                        if _dc in _save_tkt_df.columns:
+                            _save_tkt_df[_dc] = pd.to_datetime(_save_tkt_df[_dc], errors="coerce") \
+                                                  .dt.tz_localize(None)
+
+                    _counts = append_r25_full_burndown(_engine(), _ft_burn_df, _save_tkt_df)
+                st.success(
+                    f"Saved to DB — r25_burndown: Committed + Full Team rows · "
+                    f"r25_sprint_tickets: {_counts['ticket_rows']} tickets"
+                )
+
+            # ── Ticket table with assignee filter ─────────────────────────────
+            st.markdown("---")
+            sec(f"Full Ticket List ({len(_full_pool)} tickets)")
+
+            _tbl_assignees = ["All"] + sorted(_full_pool["assignee"].dropna().unique().tolist())
+            _tbl_scope_filter = st.radio("Scope", ["All", "In Scope", "Out of Scope"],
+                                         horizontal=True, key="all_burn_scope_filter")
+            _tbl_assignee_filter = st.selectbox("Assignee", _tbl_assignees, key="all_burn_assignee")
+
+            _tbl_df = _full_pool.copy()
+            if _tbl_assignee_filter != "All":
+                _tbl_df = _tbl_df[_tbl_df["assignee"] == _tbl_assignee_filter]
+            if _tbl_scope_filter == "In Scope":
+                _tbl_df = _tbl_df[_tbl_df["in_scope"]]
+            elif _tbl_scope_filter == "Out of Scope":
+                _tbl_df = _tbl_df[~_tbl_df["in_scope"]]
+
+            _tbl_cols = [c for c in ["key", "summary", "assignee", "status",
+                                      "story_points", "in_scope", "_resolved_at"]
+                         if c in _tbl_df.columns]
+            st.dataframe(
+                _tbl_df[_tbl_cols]
+                .rename(columns={"_resolved_at": "completed_at", "in_scope": "In Scope"})
+                .sort_values("completed_at", na_position="last"),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.info("Select sprint dates above to display this burndown.")
 
 
 # ── TAB: BACKLOG BURNDOWN ─────────────────────────────────────────────────────
@@ -2272,7 +2556,8 @@ with tab_team:
         _tickets_out = _scope_pool[[
             c for c in ["key", "summary", "status", "assignee", "display_name",
                          "squad", "_pts", "issue_type", "priority",
-                         "_is_delivered", "_is_not_delivered"]
+                         "_is_delivered", "_is_not_delivered",
+                         "qualification_date", "resolved", "closure_date"]
             if c in _scope_pool.columns
         ]].rename(columns={
             "_pts":              "story_points",
@@ -2283,10 +2568,51 @@ with tab_team:
             if _bc in _tickets_out.columns:
                 _tickets_out[_bc] = _tickets_out[_bc].astype(int)
 
+        # Compute exclusion_reason for burndown context
+        # A ticket is excluded from burndown if: delivered status but no date within sprint
+        _t_sp_s = pd.Timestamp(_team_sprint_start)
+        _t_sp_e = pd.Timestamp(_team_sprint_end) + pd.Timedelta(hours=23, minutes=59)
+        _DELIVERED_SET = {
+            "closed", "qualification test", "ready for staging",
+            "ready for exceptions", "ready for qa", "ready for sprint",
+            "cancelled", "canceled", "on hold", "plan investigation", "work approved",
+            "ready for acceptance", "waiting for customer",
+        }
+        _t_is_done = _tickets_out["status"].str.lower().str.strip().isin(_DELIVERED_SET)
+        _date_cols_t = [c for c in ["qualification_date", "resolved", "closure_date"]
+                        if c in _tickets_out.columns]
+        # Earliest raw date
+        _any_date = pd.concat(
+            [pd.to_datetime(_tickets_out[c], errors="coerce") for c in _date_cols_t], axis=1
+        ).min(axis=1)
+        # Earliest date within sprint
+        _in_sprint = pd.concat([
+            pd.to_datetime(_tickets_out[c], errors="coerce").where(
+                lambda s: s.notna() & (s >= _t_sp_s) & (s <= _t_sp_e)
+            ) for c in _date_cols_t
+        ], axis=1).min(axis=1)
+        _has_in_sprint = _in_sprint.notna()
+
+        def _excl_reason(row_idx):
+            if not _t_is_done.iloc[row_idx]:
+                return None  # not delivered — not applicable
+            if _has_in_sprint.iloc[row_idx]:
+                return None  # correctly placed on burndown
+            if pd.isna(_any_date.iloc[row_idx]):
+                return None  # NO_DATE → counted at end of sprint, not excluded
+            return "DATE_OUTSIDE_SPRINT"
+
+        _tickets_out["exclusion_reason"] = [
+            _excl_reason(i) for i in range(len(_tickets_out))
+        ]
+
+        _assignee_out = _assignee_df.drop(columns=["jira_name"], errors="ignore")
+        _squad_out = _squad_df.copy()
+
         return materialise_r25_team_commitment(
             _engine(),
-            _assignee_df.drop(columns=["jira_name"], errors="ignore"),
-            _squad_df,
+            _assignee_out,
+            _squad_out,
             _tickets_out,
         )
 

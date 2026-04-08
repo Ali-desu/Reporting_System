@@ -1,0 +1,662 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage{amsmath}
+
+% ── Colors ──────────────────────────────────────────────────────────────────
+\definecolor{dxcpurple}{RGB}{102, 0, 153}
+\definecolor{codebg}{RGB}{245, 245, 245}
+\definecolor{codeframe}{RGB}{200, 200, 200}
+\definecolor{keywordcolor}{RGB}{0, 0, 180}
+\definecolor{stringcolor}{RGB}{163, 21, 21}
+\definecolor{commentcolor}{RGB}{0, 128, 0}
+
+% ── Code style ──────────────────────────────────────────────────────────────
+\lstdefinestyle{python}{
+    language=Python,
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{codeframe},
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{keywordcolor}\bfseries,
+    stringstyle=\color{stringcolor},
+    commentstyle=\color{commentcolor}\itshape,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    numbersep=8pt,
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=4,
+    showstringspaces=false,
+    captionpos=b,
+}
+
+\lstdefinestyle{bash}{
+    language=bash,
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{codeframe},
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{keywordcolor}\bfseries,
+    stringstyle=\color{stringcolor},
+    commentstyle=\color{commentcolor}\itshape,
+    breaklines=true,
+    showstringspaces=false,
+}
+
+\lstdefinestyle{json}{
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{codeframe},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    showstringspaces=false,
+}
+
+% ── Header / Footer ─────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{dxcpurple}{\textbf{DXC Technology}}}
+\fancyhead[R]{\textcolor{dxcpurple}{Jira API Integration}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{dxcpurple}\leaders\hrule height \headrulewidth\hfill}}
+
+% ── Section colors ───────────────────────────────────────────────────────────
+\titleformat{\section}{\large\bfseries\color{dxcpurple}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{dxcpurple}}{}{0em}{}
+
+% ── Hyperref ────────────────────────────────────────────────────────────────
+\hypersetup{
+    colorlinks=true,
+    linkcolor=dxcpurple,
+    urlcolor=dxcpurple,
+    citecolor=dxcpurple,
+}
+
+% ────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Title page ──────────────────────────────────────────────────────────────
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\color{dxcpurple}\rule{\linewidth}{1.5pt}}\\[0.5cm]
+    {\Huge\bfseries\color{dxcpurple} Jira API Integration}\\[0.3cm]
+    {\Large Technical Procedure Document}\\[0.3cm]
+    {\color{dxcpurple}\rule{\linewidth}{1.5pt}}\\[2cm]
+
+    {\large\textbf{Project:} IRP AUTO — DXC GraphTalk Service Desk Reporting System}\\[0.5cm]
+    {\large\textbf{Instance:} \texttt{dxc-insurance-delivery.atlassian.net}}\\[0.5cm]
+    {\large\textbf{Project Key:} \texttt{IRPAUTO}}\\[2cm]
+
+    \begin{tabular}{ll}
+        \textbf{Author}   & El Adnani Ali \\[0.3cm]
+        \textbf{Date}     & April 2, 2026 \\[0.3cm]
+        \textbf{Version}  & 1.0 \\[0.3cm]
+        \textbf{Status}   & Production \\
+    \end{tabular}
+
+    \vfill
+    {\color{dxcpurple}\rule{\linewidth}{0.4pt}}\\[0.2cm]
+    {\small DXC Technology — IRP AUTO Service Desk Analytics Platform}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Overview}
+
+This document describes the end-to-end procedure for connecting the DXC IRP AUTO reporting
+dashboard to Atlassian Jira Cloud via the REST API v3. Prior to this integration, issue data
+was obtained by manually exporting an Excel file from Jira and uploading it through the
+application. This process was replaced by a direct programmatic connection that allows
+on-demand and incremental synchronisation without any manual file handling.
+
+\subsection{Objectives}
+
+\begin{itemize}
+    \item Eliminate the manual Excel export/upload workflow.
+    \item Provide full parity with all columns previously available in the Excel extract.
+    \item Support both \textbf{incremental sync} (issues updated since a given date) and
+          \textbf{full reload} (all issues from the beginning of the project).
+    \item Expose a user-friendly sync interface inside the existing Streamlit dashboard.
+\end{itemize}
+
+\subsection{Architecture Summary}
+
+The integration follows a straightforward \textbf{Extract–Transform–Load (ETL)} pattern:
+
+\begin{enumerate}
+    \item \textbf{Extract} — Paginate through the Jira REST API v3 \texttt{/search/jql}
+          endpoint using a JQL query.
+    \item \textbf{Transform} — Map raw Jira field values to the application's column schema,
+          parse dates, resolve numeric types, and compute derived columns.
+    \item \textbf{Load} — Write the resulting DataFrame into the MySQL database (Aiven Cloud)
+          using either an upsert or a full replace strategy.
+\end{enumerate}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Prerequisites}
+
+\subsection{Jira API Token}
+
+Authentication uses an Atlassian \textbf{API Token} (not a password). To generate one:
+
+\begin{enumerate}
+    \item Log in to \href{https://id.atlassian.com/manage-profile/security/api-tokens}
+          {\texttt{id.atlassian.com}} with your DXC account.
+    \item Click \textit{Create API token}, give it a name, and copy the generated value.
+    \item Store it in the application's \texttt{.env} file (see Section~\ref{sec:env}).
+\end{enumerate}
+
+\subsection{Python Dependency}
+
+The only additional library required beyond what was already installed is \texttt{requests}:
+
+\begin{lstlisting}[style=bash]
+pip install requests
+\end{lstlisting}
+
+\subsection{Environment Variables}
+\label{sec:env}
+
+Three new variables are added to the \texttt{.env} file:
+
+\begin{lstlisting}[style=bash]
+JIRA_URL=https://dxc-insurance-delivery.atlassian.net
+JIRA_EMAIL=ali.eladnani@dxc.com
+JIRA_API_TOKEN=<your-api-token>
+\end{lstlisting}
+
+These are read at runtime by both \texttt{etl.py} and \texttt{app.py} via \texttt{python-dotenv}.
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{API Discovery}
+
+Before implementing the integration, the Jira REST API was explored interactively to verify
+connectivity, discover available projects, and map every field used by the existing Excel
+extract to its corresponding Jira API field identifier.
+
+\subsection{Authentication Test}
+
+\begin{lstlisting}[style=bash, caption={Verify API credentials}]
+curl -u "email:api_token" \
+  "https://dxc-insurance-delivery.atlassian.net/rest/api/3/myself"
+\end{lstlisting}
+
+A successful response returns the authenticated user's profile, confirming that Basic Auth
+with an API token works correctly against this Jira Cloud instance.
+
+\subsection{Project Discovery}
+
+\begin{lstlisting}[style=bash, caption={List accessible projects}]
+curl -u "email:api_token" \
+  "https://dxc-insurance-delivery.atlassian.net/rest/api/3/project/search"
+\end{lstlisting}
+
+The IRPAUTO project (\textit{IRP AUTO — DXC GraphTalk Service Desk}) was confirmed accessible
+among five projects: DSP, GLPS, IRPAUTO, SRSI, and TEST.
+
+\subsection{Field Mapping Discovery}
+
+The complete list of available fields was retrieved from:
+
+\begin{lstlisting}[style=bash, caption={Retrieve all field definitions}]
+curl -u "email:api_token" \
+  "https://dxc-insurance-delivery.atlassian.net/rest/api/3/field"
+\end{lstlisting}
+
+Individual issues (including a known closed ticket and a scope ticket) were inspected
+with \texttt{?fields=*all} to identify which custom fields carry meaningful values for IRPAUTO.
+
+\subsection{Issue Count}
+
+The approximate total was retrieved via the count endpoint:
+
+\begin{lstlisting}[style=bash, caption={Approximate issue count}]
+POST /rest/api/3/search/approximate-count
+{ "jql": "project = IRPAUTO" }
+# Response: { "count": 55244 }
+\end{lstlisting}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Field Mapping}
+
+\subsection{Understanding Jira Field Types}
+
+Jira has two categories of fields, which look very different in the API response:
+
+\begin{itemize}
+    \item \textbf{Standard fields} — built into every Jira instance. They have simple names
+          like \texttt{assignee}, \texttt{status}, \texttt{priority}. In the API response
+          they are objects containing sub-properties. For example, the \texttt{assignee}
+          field returns a JSON object like:
+          \begin{lstlisting}[style=json]
+"assignee": {
+    "displayName": "El Adnani Ali",
+    "emailAddress": "ali.eladnani@dxc.com",
+    "accountId": "712020:2dce71f4-..."
+}
+          \end{lstlisting}
+          Our ETL extracts the \texttt{displayName} sub-property. There is no separate field
+          called \texttt{assignee.displayName} — it is simply the \textit{name of the person}
+          stored inside the \texttt{assignee} object.
+
+    \item \textbf{Custom fields} — created specifically for this Jira instance by an
+          administrator. They have auto-generated IDs like \texttt{customfield\_10492}.
+          In the Jira UI they appear under their human-readable label (e.g.\ ``Qualification
+          date''), but in the API they are always referenced by their numeric ID.
+\end{itemize}
+
+\subsection{How to Find a Custom Field ID in Jira}
+
+There are three ways to look up the ID of any custom field:
+
+\begin{enumerate}
+    \item \textbf{Jira Admin panel} (requires admin access):\\
+          Navigate to \textit{Settings} $\to$ \textit{Issues} $\to$ \textit{Custom fields}.
+          Click on any field name. The URL in your browser will contain the field ID,
+          e.g.\ \texttt{.../customFieldId=10492}.
+
+    \item \textbf{REST API field list} (no admin required):\\
+          Call \texttt{GET /rest/api/3/field} — this returns the full list of all fields
+          with their IDs and human-readable names. Filter the result for the field name
+          you are looking for.
+
+    \item \textbf{Issue view in browser}:\\
+          Open any issue in Jira, right-click on a field label, and inspect the element.
+          The HTML often contains the field ID in a \texttt{data-field-id} attribute.
+\end{enumerate}
+
+\subsection{Complete Field Reference Table}
+
+Table~\ref{tab:fieldmap} maps every Excel column to the corresponding Jira field. The
+\textit{Jira UI Label} column shows the name as it appears on the issue screen in the
+browser. The \textit{API Field ID} column is what the code uses to request and read the
+field from the REST API.
+
+\begin{longtable}{>{\small}p{3.6cm} >{\ttfamily\small}p{3.2cm} >{\small}p{3.0cm} >{\ttfamily\small}p{3.0cm}}
+    \toprule
+    \normalfont\textbf{Excel Column} &
+    \normalfont\textbf{DB Column} &
+    \normalfont\textbf{Jira UI Label} &
+    \normalfont\textbf{API Field ID} \\
+    \midrule
+    \endhead
+    \bottomrule
+    \endfoot
+    \caption{Complete field mapping: Excel $\to$ DB $\to$ Jira UI $\to$ API ID}
+    \label{tab:fieldmap}
+    \endlastfoot
+
+    Key                        & key                        & Key                          & issuekey \\
+    Issue Type                 & issue\_type                & Issue Type                   & issuetype \\
+    Summary                    & summary                    & Summary                      & summary \\
+    Assignee                   & assignee                   & Assignee                     & assignee \\
+    Reporter                   & reporter                   & Reporter                     & reporter \\
+    Priority                   & priority                   & Priority                     & priority \\
+    Status                     & status                     & Status                       & status \\
+    Created                    & created                    & Created                      & created \\
+    Resolved                   & resolved                   & Resolved                     & resolutiondate \\
+    Due date                   & due\_date                  & Due date                     & duedate \\
+    Fix versions               & fix\_versions              & Fix versions                 & fixVersions \\
+    Project                    & project                    & Project                      & project \\
+    Closure Date               & closure\_date              & Closure Date                 & customfield\_10297 \\
+    Qualification date         & qualification\_date        & Qualification date           & customfield\_10492 \\
+    Sending Date               & sending\_date              & Sending Date                 & customfield\_10369 \\
+    Last Comment Date/Time     & last\_comment\_datetime    & Last Comment Date/Time       & customfield\_10248 \\
+    Start Date \& Time         & start\_date\_time          & Start Date \& Time           & customfield\_10317 \\
+    Story Points               & story\_points              & Story Points (numeric)       & customfield\_10049 \\
+    Story Points (IRPAUTO)     & story\_points              & Story Points (dropdown)*     & customfield\_10520 \\
+    Organizations              & organizations              & Organizations                & customfield\_10002 \\
+    Customer Reference Id      & customer\_reference\_id    & Customer Reference Id        & customfield\_10127 \\
+    Environment Type           & environment\_type          & Environment Type             & customfield\_10187 \\
+    Environment                & environment                & Environment                  & customfield\_10238 \\
+    Component                  & component                  & Component                    & customfield\_10171 \\
+    Current Tier               & current\_tier              & Current Tier                 & customfield\_10173 \\
+    Reproductibility           & reproductibility           & Reproductibility             & customfield\_10242 \\
+    Resolutions                & resolutions                & Resolutions                  & customfield\_10301 \\
+    Root Cause Description     & root\_cause\_description   & Root Cause Description       & customfield\_10310 \\
+    Impact Description         & impact\_description        & Impact Description           & customfield\_10312 \\
+    Resolution Description     & resolution\_description    & Resolution Description       & customfield\_10311 \\
+    Client Priority            & client\_priority           & Client Priority              & customfield\_10303 \\
+    Target Release             & target\_release            & Target Release               & customfield\_10179 \\
+    Count Ready Acceptance     & count\_ready\_acceptance   & Count of Ready for acceptance & customfield\_10327 \\
+    Count Ready Staging        & count\_ready\_staging      & Count of ready for staging   & customfield\_10321 \\
+    Product Line               & product\_line              & Product Line                 & customfield\_10229 \\
+    Occurrences                & occurrences                & Occurrences                  & customfield\_10381 \\
+    SLA Justified              & sla\_justified             & SLA Justified                & customfield\_10429 \\
+    OUT OF SLA Reason          & out\_of\_sla\_reason       & OUT OF SLA Reason            & customfield\_10446 \\
+    Root Cause Origin          & root\_cause\_origin        & Root Cause Origin            & customfield\_10452 \\
+    Nombre d'UO                & nombre\_uo                 & Nombre d'UO                  & customfield\_10447 \\
+    Service request types      & service\_request\_types    & Service request types        & customfield\_10165 \\
+    Enhancement request type   & enhancement\_request\_type & Enhancement request type     & customfield\_10382 \\
+    Resolution Owner           & resolution\_owner          & Resolution Owner             & customfield\_11038 \\
+    Expected Sprint            & expected\_sprint           & Expected Sprint              & customfield\_10315 \\
+    Original Expected Sprint   & original\_expected\_sprint & Original Expected Sprint     & customfield\_10642 \\
+    Baseline / Standard Issue  & baseline\_standard\_issue  & Baseline / Standard Issue    & customfield\_10305 \\
+    KPI - Time to Solve        & kpi\_time\_to\_solve\_minutes      & KPI - Time to Solve$^\dagger$  & customfield\_10186 \\
+    KPI - Time Initial Response & kpi\_time\_initial\_response\_minutes & KPI - Time Initial Response$^\dagger$ & customfield\_10185 \\
+    KPI - Time to Analyse      & kpi\_time\_to\_analyse\_minutes    & KPI - Time to Analyse$^\dagger$ & customfield\_10485 \\
+    KPI - Time to Assist       & kpi\_time\_to\_assist\_minutes     & KPI - Time to Assist$^\dagger$ & customfield\_10428 \\
+    KPI - Time to Estimate     & kpi\_time\_to\_estimate\_minutes   & KPI - Time to Estimate$^\dagger$ & customfield\_10293 \\
+
+\end{longtable}
+
+\noindent
+* \textbf{Story Points — dual field (IRPAUTO specific):} IRPAUTO uses two different fields
+for story points. \texttt{customfield\_10049} is the standard Jira numeric SP field, but it
+is empty for \textasciitilde82\% of IRPAUTO tickets. The actual values are stored in
+\texttt{customfield\_10520}, which is a dropdown field whose options are the point values
+(\texttt{1}, \texttt{2}, \texttt{3}, \texttt{5}, \texttt{8}, \texttt{12}, \texttt{20}).
+The ETL reads \texttt{customfield\_10049} first and falls back to \texttt{customfield\_10520}
+when null.
+
+\vspace{0.4cm}
+\noindent
+$\dagger$ \textbf{KPI SLA fields:} In the Jira UI these fields show durations like
+\texttt{998h 31m}. However the REST API returns them as complex SLA cycle objects
+(start timestamp, stop timestamp, breach status, remaining time) — not a pre-formatted
+string. The Excel export pre-processes these into the human-readable format. The ETL
+currently stores these as \texttt{NULL}; parsing the raw SLA objects is deferred to a
+future iteration.
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Implementation}
+
+\subsection{ETL Function: \texttt{fetch\_jira\_issues}}
+
+The core of the integration is the \texttt{fetch\_jira\_issues} function added to
+\texttt{etl.py}. Its full signature is:
+
+\begin{lstlisting}[style=python, caption={Function signature}]
+def fetch_jira_issues(
+    engine,
+    jira_url: str,
+    email: str,
+    api_token: str,
+    project: str = "IRPAUTO",
+    mode: str = "upsert",       # "upsert" | "replace"
+    updated_since: str = None,  # ISO date "YYYY-MM-DD" for incremental
+    progress_cb = None,         # callable(done, total) for UI progress
+) -> dict:  # {"fetched": N, "loaded": N}
+\end{lstlisting}
+
+\subsection{Step 1 — Approximate Count}
+
+Before fetching, the function queries the approximate count endpoint to enable an accurate
+progress bar in the UI:
+
+\begin{lstlisting}[style=python, caption={Pre-fetch count for progress bar}]
+resp = requests.post(
+    f"{base}/rest/api/3/search/approximate-count",
+    auth=auth, headers=headers,
+    json={"jql": jql}, timeout=15,
+)
+total_hint = resp.json().get("count", 0)
+\end{lstlisting}
+
+\subsection{Step 2 — JQL Construction}
+
+The JQL query is built dynamically based on whether the sync is incremental or full:
+
+\begin{lstlisting}[style=python, caption={JQL construction}]
+jql = f"project = {project}"
+if updated_since:
+    jql += f' AND updated >= "{updated_since}"'
+jql += " ORDER BY updated ASC"
+\end{lstlisting}
+
+\subsection{Step 3 — Pagination}
+
+The new \texttt{/rest/api/3/search/jql} endpoint (v3, replacing the deprecated
+\texttt{/search}) uses cursor-based pagination via a \texttt{nextPageToken}:
+
+\begin{lstlisting}[style=python, caption={Cursor-based pagination loop}]
+next_page_token = None
+while True:
+    payload = {
+        "jql":        jql,
+        "maxResults": 100,
+        "fields":     list(_JIRA_FIELD_MAP.keys()),
+    }
+    if next_page_token:
+        payload["nextPageToken"] = next_page_token
+
+    resp = requests.post(endpoint, auth=auth,
+                         headers=headers, json=payload, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+
+    for issue in data.get("issues", []):
+        row = {"key": issue["key"]}
+        for jira_fid, db_col in _JIRA_FIELD_MAP.items():
+            if db_col in row:
+                continue
+            row[db_col] = _jira_extract(jira_fid,
+                                        issue["fields"].get(jira_fid))
+        all_rows.append(row)
+
+    if progress_cb:
+        progress_cb(len(all_rows), total_hint)
+
+    if data.get("isLast", True):
+        break
+    next_page_token = data.get("nextPageToken")
+    if not next_page_token:
+        break
+\end{lstlisting}
+
+\subsection{Step 4 — Field Extraction}
+
+The \texttt{\_jira\_extract} helper normalises the diverse value types returned by the API:
+
+\begin{lstlisting}[style=python, caption={Field extraction helper (excerpt)}]
+def _jira_extract(field_id: str, val):
+    if val is None:
+        return None
+
+    # Plain objects: grab name / displayName / value
+    if isinstance(val, dict):
+        return (val.get("name") or val.get("displayName")
+                or val.get("value") or val.get("key"))
+
+    # Lists: join names
+    if isinstance(val, list):
+        parts = [str(item.get("name") or item.get("value") or "")
+                 for item in val if isinstance(item, dict)]
+        return ", ".join(p for p in parts if p) or None
+
+    # ADF rich-text (Root Cause, Resolution Description, etc.)
+    if isinstance(val, dict) and val.get("type") == "doc":
+        return _adf_to_text(val).strip() or None
+
+    return val  # scalar (string, number, bool)
+\end{lstlisting}
+
+\subsection{Step 5 — Transform Pipeline}
+
+After all pages are fetched, the raw rows are assembled into a DataFrame and cleaned:
+
+\begin{lstlisting}[style=python, caption={Transform pipeline}]
+df = pd.DataFrame(all_rows)
+
+# 1. Normalise strings
+obj_cols = df.select_dtypes(include="object").columns
+for col in obj_cols:
+    df[col] = (df[col].astype(str).str.strip()
+               .replace({"nan": None, "None": None, "": None}))
+
+# 2. Parse all date columns (ISO strings with timezone offsets)
+def _to_dt(series):
+    return (pd.to_datetime(series, errors="coerce", utc=True)
+            .dt.tz_convert(None))   # strip TZ -> tz-naive datetime64
+
+for col in DATE_COLS:
+    if col in df.columns:
+        df[col] = _to_dt(df[col])
+
+# 3. Merge dual story-points fields
+_sp_opt = pd.to_numeric(df["story_points_option"], errors="coerce")
+df["story_points"] = df["story_points"].fillna(_sp_opt)
+df.drop(columns=["story_points_option"], inplace=True)
+
+# 4. Derived columns (same as Excel ETL path)
+mask = df["resolved"].notna() & df["created"].notna()
+df.loc[mask, "resolution_days"] = (
+    (df.loc[mask, "resolved"] - df.loc[mask, "created"])
+    .dt.total_seconds() / 86400
+)
+df["created_yearmonth"] = df["created"].dt.to_period("M").astype(str)
+df["created_year"]      = df["created"].dt.year
+df["created_month"]     = df["created"].dt.month
+df["created_week"]      = df["created"].dt.isocalendar().week.astype(float)
+\end{lstlisting}
+
+\subsection{Step 6 — Load into Database}
+
+The cleaned DataFrame is written to MySQL using the existing \texttt{upsert} or
+\texttt{initial\_load} functions, maintaining full schema compatibility with the Excel path:
+
+\begin{lstlisting}[style=python, caption={Load to DB}]
+from sqlalchemy import inspect as _inspect
+
+df = df.drop_duplicates(subset=["key"], keep="last")
+
+if mode == "replace" or not _inspect(engine).has_table("issues"):
+    n = initial_load(df, engine)   # DROP + CREATE + INSERT
+else:
+    n = upsert(df, engine)         # DELETE existing keys + INSERT
+\end{lstlisting}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{UI Integration}
+
+A \textbf{Sync from Jira} section was added to the Upload tab of the Streamlit dashboard,
+above the legacy Excel uploader. It exposes:
+
+\begin{itemize}
+    \item \textbf{Sync mode}: Incremental (issues updated since a chosen date) or
+          Replace all (full reload of all $\sim$55,000 issues).
+    \item \textbf{Project key}: Configurable text input, defaulting to \texttt{IRPAUTO}.
+    \item \textbf{Updated since}: Date picker used in incremental mode.
+    \item \textbf{Progress bar}: Live display of \texttt{fetched / total} issues as pages
+          are retrieved.
+\end{itemize}
+
+\begin{lstlisting}[style=python, caption={Progress callback wired to Streamlit}]
+_progress_bar = st.progress(0, text="Connecting to Jira...")
+
+def _update_progress(done, total):
+    pct = min(done / max(total, 1), 1.0)
+    _progress_bar.progress(
+        pct, text=f"Fetched {done:,} / {total:,} issues..."
+    )
+
+result = fetch_jira_issues(
+    engine=_engine(),
+    jira_url=_jira_url,
+    email=_jira_email,
+    api_token=_jira_token,
+    project=_jira_project,
+    mode=_mode_str,
+    updated_since=_since_str,
+    progress_cb=_update_progress,
+)
+\end{lstlisting}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Technical Findings}
+
+\subsection{API Version}
+
+The classic \texttt{GET /rest/api/3/search?jql=...} endpoint has been deprecated and removed
+by Atlassian. The replacement is \texttt{POST /rest/api/3/search/jql} which accepts a JSON
+body and uses cursor-based pagination (\texttt{nextPageToken}) instead of offset-based.
+
+\subsection{Story Points — Dual Field Issue}
+
+IRPAUTO uses a non-standard story points configuration. Two fields exist:
+
+\begin{itemize}
+    \item \texttt{customfield\_10049} — the standard Jira story points field (numeric).
+          Populated only on non-IRPAUTO issues in this instance.
+    \item \texttt{customfield\_10520} — a custom dropdown field labelled ``Story Points''
+          with option values \texttt{'1'}, \texttt{'2'}, \texttt{'3'}, \texttt{'4'},
+          \texttt{'5'}, \texttt{'8'}, \texttt{'12'}, \texttt{'20'}, etc. This is the
+          actual source of story points for IRPAUTO.
+\end{itemize}
+
+The ETL reads \texttt{customfield\_10049} first, then falls back to
+\texttt{customfield\_10520}. Without this fallback, approximately 82\% of IRPAUTO issues
+would have \texttt{NULL} story points, making the sprint burndown chart completely incorrect.
+
+\subsection{Date Timezone Handling}
+
+Jira returns all timestamps in ISO 8601 format with timezone offsets
+(e.g.\ \texttt{2026-03-27T16:37:02.386+0100}). Parsing these with
+\texttt{pd.to\_datetime(..., utc=True)} produces timezone-aware \texttt{datetime64[ns, UTC]}
+series. The application's MySQL schema expects timezone-naive datetimes, so
+\texttt{.dt.tz\_convert(None)} is applied to strip the timezone after normalisation to UTC.
+
+\subsection{ADF Rich-Text Fields}
+
+Fields such as Root Cause Description, Resolution Description, and Impact Description are
+returned in Atlassian Document Format (ADF) — a nested JSON structure. A recursive
+\texttt{\_adf\_to\_text} function traverses the document tree and extracts plain text,
+preserving paragraph breaks.
+
+\subsection{KPI SLA Fields}
+
+The five KPI duration fields (\textit{Time to Solve}, \textit{Time Initial Response}, etc.)
+are stored by Jira as complex SLA cycle objects containing start time, stop time,
+breach status, and remaining time. The Excel export pre-processes these into human-readable
+strings like \texttt{998h 31m}. Replicating this calculation from the raw API requires
+parsing the SLA cycles, which is deferred to a future iteration. These fields are currently
+stored as \texttt{NULL}.
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Recommended Workflow}
+
+\begin{enumerate}
+    \item \textbf{Initial bootstrap} (once): Run a \textit{Replace all} sync to load the
+          full history of $\sim$55,000 issues. Expected duration: approximately 10 minutes.
+    \item \textbf{Daily incremental sync}: Each morning, run an \textit{Incremental} sync
+          with \textit{Updated since} set to yesterday's date. Only issues modified in the
+          last 24 hours are fetched and upserted. Expected duration: under 1 minute for
+          typical daily volumes.
+    \item \textbf{After sync}: Click \textit{Refresh R25 Sprint Burndown} and
+          \textit{Refresh Backlog Burndown} to recompute the pre-aggregated Power BI tables.
+    \item \textbf{Release Lifecycle file}: The scope, team availability, and sprint metadata
+          still require a manual upload of \texttt{Release\_lifecycle\_R25.xlsx}, as this
+          data does not exist in Jira.
+\end{enumerate}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Summary}
+
+The Jira API integration achieves full data parity with the legacy Excel extract across all
+fields except the KPI SLA durations. The incremental sync mode makes day-to-day operation
+fast and lightweight, while the full reload option provides a clean baseline whenever needed.
+The dual story-points field handling is a critical IRPAUTO-specific detail that ensures
+burndown charts and sprint metrics remain accurate.
+
+\vspace{1cm}
+\noindent\rule{\linewidth}{0.4pt}
+{\small\textit{Document generated on April 2, 2026 — DXC Technology, IRP AUTO Analytics Platform.}}
+
+\end{document}

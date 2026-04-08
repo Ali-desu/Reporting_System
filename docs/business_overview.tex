@@ -1,0 +1,258 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{parskip}
+
+\title{\textbf{R25 Sprint --- Business Overview}}
+\author{DXC Service Desk Analytics}
+\date{Sprint R25 \quad|\quad 08 March -- 04 April 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{What is a Sprint?}
+
+A sprint is a fixed time period during which the team commits to delivering
+a defined set of work. For R25, the sprint runs from \textbf{08 March to
+04 April 2026} (28 working and calendar days).
+
+At the start of the sprint, the team agrees on a list of tickets to complete.
+This list is called the \textbf{committed scope}. The burndown chart then
+tracks, day by day, how much of that scope has been delivered and how much
+remains.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The Two Input Files}
+
+\subsection{Extract.xlsx --- The Live Jira Export}
+
+This file is exported directly from Jira and contains every ticket across all
+projects. It is the source of truth for the current state of each issue:
+its status, who it is assigned to, when it was resolved, and so on.
+
+It is uploaded to the database regularly so that the dashboards always
+reflect the latest situation.
+
+Key information found in this file:
+
+\medskip
+\begin{center}
+\begin{tabular}{p{4.5cm} p{9cm}}
+\toprule
+\textbf{Column} & \textbf{What it means} \\
+\midrule
+\textbf{Key} &
+  Unique identifier of the ticket (e.g.\ \texttt{IRPAUTO-18734}).
+  Used to link tickets across all files. \\[6pt]
+
+\textbf{Summary} &
+  Short description of the work to be done. \\[6pt]
+
+\textbf{Issue Type} &
+  Category of work: \emph{Incident}, \emph{Enhancement},
+  \emph{Service Request}, \emph{Change}, etc. \\[6pt]
+
+\textbf{Status} &
+  Where the ticket currently sits in the workflow
+  (see Section~\ref{sec:workflow}). \\[6pt]
+
+\textbf{Priority} &
+  Urgency level: Critical, High, Medium, or Low. \\[6pt]
+
+\textbf{Assignee} &
+  The team member responsible for resolving the ticket. \\[6pt]
+
+\textbf{Story Points} &
+  An estimate of the effort required, agreed during sprint planning.
+  Higher = more complex work. \\[6pt]
+
+\textbf{Created} &
+  Date and time the ticket was opened in Jira. \\[6pt]
+
+\textbf{Qualification Date} &
+  Date the ticket passed the QA gate --- it has been tested and
+  validated before being sent to the client. \\[6pt]
+
+\textbf{Resolved} &
+  Date Jira recorded a resolution for the ticket. \\[6pt]
+
+\textbf{Closure Date} &
+  Date the ticket was formally closed after all steps were completed. \\[6pt]
+
+\textbf{Environment Type} &
+  Whether the issue occurred in \emph{Production} or a
+  non-production environment (Recette, UAT, etc.). \\[6pt]
+
+\textbf{Project} &
+  The client or product the ticket belongs to
+  (e.g.\ Cardif, Federale, Argenta). \\
+
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Release\_lifecycle\_R25.xlsx --- The Sprint Planning File}
+
+This file is maintained by the project management team and contains two
+important sheets.
+
+\subsubsection*{Sheet 1 --- Scope UPDATE}
+
+Lists the tickets that have been \textbf{officially committed} for sprint R25.
+Not every ticket in Jira is included --- only those the team has agreed to
+deliver during this sprint.
+
+For each committed ticket it records:
+\begin{itemize}
+  \item The Jira key.
+  \item The story point estimate from planning (may differ from Jira if updated later).
+  \item The expected sprint and delivery status from the planning perspective.
+\end{itemize}
+
+\subsubsection*{Sheet 2 --- Team Availability}
+
+Lists every team member involved in R25 and their \textbf{productive capacity}
+for the sprint, expressed in person-days (\emph{Jours-Homme}, JH).
+
+The capacity already accounts for deductions such as vacations, training
+days, and transverse activities. The resulting figure (\texttt{cap\_prod})
+represents the net time available for delivery work.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The Ticket Workflow}
+\label{sec:workflow}
+
+A ticket moves through a series of statuses from the moment it is created
+until it is closed. The typical journey looks like this:
+
+\medskip
+\begin{center}
+\begin{tabular}{p{4cm} p{9cm}}
+\toprule
+\textbf{Status} & \textbf{What it means} \\
+\midrule
+\textbf{Open / New} &
+  Ticket has just been created, no one has started working on it yet. \\[6pt]
+
+\textbf{Analysis / In Progress} &
+  A team member is actively investigating or implementing the fix. \\[6pt]
+
+\textbf{Ready for QA} &
+  Development or fix is done. The ticket is waiting for quality
+  assurance testing. \\[6pt]
+
+\textbf{Ready for Acceptance} &
+  QA passed. The ticket is waiting for client validation. \\[6pt]
+
+\textbf{Resolved} &
+  The work has been completed and validated. Jira has recorded a
+  resolution date. \\[6pt]
+
+\textbf{Closed} &
+  All steps are done and the ticket is formally archived.
+  This is the final state. \\[6pt]
+
+\textbf{Cancelled} &
+  The ticket was abandoned --- the work is no longer needed. \\
+
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+For the burndown, a ticket counts as \textbf{delivered} once it reaches
+\emph{Resolved}, \emph{Closed}, or \emph{Cancelled} --- or once it has a
+valid completion date recorded (qualification, resolution, or closure)
+during the sprint window.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{What the Burndown Chart Shows}
+
+The burndown chart answers one question: \textbf{are we going to finish
+everything we committed to by the end of the sprint?}
+
+\begin{itemize}
+  \item The \textbf{grey dashed line} (ideal) shows what perfect, steady
+        progress would look like --- delivering an equal share of the scope
+        every single day.
+
+  \item The \textbf{purple line} (actual) shows what was really delivered
+        each day, based on the live Jira extract.
+
+  \item When the purple line is \textbf{above} the grey line, the team is
+        behind schedule.
+
+  \item When the purple line is \textbf{below} the grey line, the team is
+        ahead of schedule.
+
+  \item \textbf{Flat segments} mean no tickets were delivered that day
+        (weekend, public holiday, or blocked work).
+
+  \item \textbf{Steep drops} mean several tickets were delivered on the
+        same day.
+\end{itemize}
+
+The chart can be read in two ways:
+\begin{itemize}
+  \item \textbf{Story Points} --- measures effort. Closing a large,
+        complex ticket counts more than closing a small one.
+  \item \textbf{Ticket Count} --- measures volume. Every closed ticket
+        counts equally, regardless of size.
+\end{itemize}
+
+Comparing both gives a clearer picture: if ticket count looks good but
+story points are lagging, the team may be closing easy tickets while
+avoiding the heavy ones.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Team Capacity and Productivity}
+
+Each team member has a \textbf{productive capacity} (\texttt{cap\_prod})
+expressed in person-days for the sprint. This is calculated from the
+planning file after deducting:
+
+\begin{itemize}
+  \item Vacation and public holidays.
+  \item Training and formation days.
+  \item Transverse activities (meetings, support, etc.).
+  \item A contingency factor applied by management.
+\end{itemize}
+
+Team members with a capacity of zero (\texttt{cap\_prod = 0}) are still
+tracked for story points delivered --- they are listed separately as
+\textbf{Unplanned Delivery}, meaning they contributed work that was not
+accounted for in the sprint plan.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{How the Data Flows End to End}
+
+\begin{enumerate}[leftmargin=*, label=\textbf{Step \arabic{enumi}.}]
+
+  \item \textbf{Planning.}
+        The project team fills in the Release Lifecycle file, listing the
+        committed tickets and team availability for the sprint.
+
+  \item \textbf{Upload to database.}
+        Both files are uploaded via the dashboard. The planning data goes
+        into \texttt{r25\_scope} and \texttt{r25\_team\_avail}. The Jira
+        extract goes into the main \texttt{issues} table.
+
+  \item \textbf{Daily work.}
+        The team resolves tickets in Jira throughout the sprint.
+
+  \item \textbf{Refresh.}
+        A new Jira extract is uploaded regularly. The burndown table
+        (\texttt{r25\_burndown}) is refreshed with one click, pulling the
+        latest resolution dates and recomputing all daily metrics.
+
+  \item \textbf{Reporting.}
+        The Streamlit dashboard and Power BI both read from the same
+        database tables, ensuring everyone sees the same numbers.
+
+\end{enumerate}
+
+\end{document}

@@ -1,0 +1,435 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{mdframed}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+
+% ── Couleurs ──────────────────────────────────────────────────────────────────
+\definecolor{dxcpurple}{RGB}{102, 0, 153}
+\definecolor{blockbg}{RGB}{248, 242, 255}
+\definecolor{greenbg}{RGB}{232, 245, 233}
+\definecolor{orangebg}{RGB}{255, 243, 224}
+\definecolor{redbg}{RGB}{255, 235, 235}
+\definecolor{greytext}{RGB}{90, 90, 90}
+\definecolor{greenborder}{RGB}{56, 142, 60}
+\definecolor{orangeborder}{RGB}{230, 81, 0}
+\definecolor{redborder}{RGB}{198, 40, 40}
+
+% ── En-tête / pied de page ────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{dxcpurple}{\textbf{DXC Technology}}}
+\fancyhead[R]{\textcolor{dxcpurple}{Architecture du Système de Reporting}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{%
+  \hbox to\headwidth{\color{dxcpurple}\leaders\hrule height \headrulewidth\hfill}}
+
+% ── Titres ────────────────────────────────────────────────────────────────────
+\titleformat{\section}{\large\bfseries\color{dxcpurple}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{dxcpurple}}{}{0em}{}
+
+% ── Environnements encadrés ───────────────────────────────────────────────────
+\newmdenv[
+  backgroundcolor=blockbg,
+  linecolor=dxcpurple,
+  linewidth=1.2pt,
+  innerleftmargin=12pt, innerrightmargin=12pt,
+  innertopmargin=10pt, innerbottommargin=10pt,
+  roundcorner=4pt
+]{purplebox}
+
+\newmdenv[
+  backgroundcolor=greenbg,
+  linecolor=greenborder,
+  linewidth=1pt,
+  innerleftmargin=12pt, innerrightmargin=12pt,
+  innertopmargin=8pt, innerbottommargin=8pt,
+  roundcorner=4pt
+]{greenbox}
+
+\newmdenv[
+  backgroundcolor=orangebg,
+  linecolor=orangeborder,
+  linewidth=1pt,
+  innerleftmargin=12pt, innerrightmargin=12pt,
+  innertopmargin=8pt, innerbottommargin=8pt,
+  roundcorner=4pt
+]{orangebox}
+
+\newmdenv[
+  backgroundcolor=redbg,
+  linecolor=redborder,
+  linewidth=1pt,
+  innerleftmargin=12pt, innerrightmargin=12pt,
+  innertopmargin=8pt, innerbottommargin=8pt,
+  roundcorner=4pt
+]{redbox}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Page de titre ─────────────────────────────────────────────────────────────
+\begin{center}
+  {\color{dxcpurple}\rule{\linewidth}{1.5pt}}\\[0.5cm]
+  {\LARGE\bfseries\color{dxcpurple}
+    Choix d'Architecture du Système de Reporting}\\[0.25cm]
+  {\large IRPAUTO · DXC GraphTalk Service Desk}\\[0.15cm]
+  {\normalsize\color{greytext}
+    Analyse comparative des architectures envisagées et justification du choix final}\\[0.4cm]
+  {\color{dxcpurple}\rule{\linewidth}{1.5pt}}
+\end{center}
+
+\vspace{0.6cm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+
+Dans le cadre du projet de tableau de bord de pilotage de sprint, plusieurs architectures
+techniques ont été étudiées pour répondre aux besoins de collecte, de stockage et de
+visualisation des données issues de Jira. Ce document présente les trois architectures
+envisagées, leurs avantages et inconvénients respectifs, ainsi que la justification du
+choix final retenu.
+
+\vspace{0.3cm}
+
+Les critères d'évaluation retenus sont les suivants~:
+
+\begin{itemize}[leftmargin=2em, itemsep=3pt]
+  \item \textbf{Sécurité et confidentialité des données}
+  \item \textbf{Faisabilité technique} dans le contexte d'un stage
+  \item \textbf{Coût} de mise en \oe uvre et d'exploitation
+  \item \textbf{Performance} et capacité de montée en charge
+  \item \textbf{Maintenabilité} et évolutivité de la solution
+  \item \textbf{Disponibilité} du tableau de bord pour les parties prenantes
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Architecture 1 — Base de données cloud externe (Aiven)}
+
+\subsection{Description}
+
+Dans cette architecture, les données extraites de Jira via l'API REST sont traitées
+par un pipeline Python (ETL) et stockées dans une base de données MySQL hébergée sur
+\textbf{Aiven}, une plateforme cloud managée. Microsoft Power BI Service se connecte
+directement à cette base via Internet pour actualiser les rapports.
+
+\vspace{0.2cm}
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=1.2cm,
+  box/.style={rectangle, rounded corners=4pt, draw=dxcpurple, fill=blockbg,
+              minimum width=2.8cm, minimum height=0.9cm, align=center,
+              font=\small},
+  cloud/.style={rectangle, rounded corners=4pt, draw=orangeborder, fill=orangebg,
+               minimum width=2.8cm, minimum height=0.9cm, align=center,
+               font=\small},
+  arr/.style={-{Stealth[length=5pt]}, thick, color=dxcpurple}
+]
+  \node[box] (jira)   {Jira REST API};
+  \node[box, right=of jira] (python) {Python ETL};
+  \node[cloud, right=of python] (aiven) {MySQL\\Aiven (cloud)};
+  \node[box, right=of aiven] (pbi)   {Power BI\\Service};
+
+  \draw[arr] (jira)   -- (python);
+  \draw[arr] (python) -- (aiven);
+  \draw[arr] (aiven)  -- (pbi);
+\end{tikzpicture}
+\end{center}
+
+\vspace{0.2cm}
+
+\subsection{Avantages et inconvénients}
+
+\begin{orangebox}
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+  \item[\textcolor{greenborder}{+}] \textbf{Disponibilité permanente}~: la base est
+        accessible 24h/24, Power BI Service peut se rafraîchir automatiquement sans
+        intervention humaine.
+  \item[\textcolor{greenborder}{+}] \textbf{Simplicité de connexion}~: Power BI
+        Desktop et Service se connectent directement via l'IP publique, sans
+        configuration réseau complexe.
+  \item[\textcolor{greenborder}{+}] \textbf{Tier gratuit disponible}~: Aiven propose
+        un tier gratuit suffisant pour le volume de données du projet.
+  \item[\textcolor{redborder}{--}] \textbf{Risque de conformité}~: les données Jira
+        contiennent des noms d'employés (données personnelles RGPD) et des références
+        clients. Leur hébergement chez un prestataire cloud tiers nécessite une
+        autorisation explicite de DXC Technology.
+  \item[\textcolor{redborder}{--}] \textbf{Dépendance externe}~: en cas de panne
+        d'Aiven ou de résiliation du service, l'ensemble du système est impacté.
+  \item[\textcolor{redborder}{--}] \textbf{Token Jira et credentials exposés}~: les
+        identifiants de connexion doivent être configurés dans un environnement externe.
+\end{itemize}
+\end{orangebox}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Architecture 2 — Power BI natif avec connecteurs directs}
+
+\subsection{Description}
+
+Dans cette architecture, Power BI se connecte directement à Jira via un connecteur
+natif ou un connecteur tiers (Exalate, Alpha Serve). Toute la logique de transformation
+et de calcul est réalisée dans Power Query (langage M) et DAX, sans pipeline Python
+ni base de données intermédiaire.
+
+\vspace{0.2cm}
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=1.2cm,
+  box/.style={rectangle, rounded corners=4pt, draw=dxcpurple, fill=blockbg,
+              minimum width=2.8cm, minimum height=0.9cm, align=center,
+              font=\small},
+  arr/.style={-{Stealth[length=5pt]}, thick, color=dxcpurple}
+]
+  \node[box] (jira)  {Jira REST API};
+  \node[box, right=2cm of jira] (pq) {Power Query\\(M + DAX)};
+  \node[box, right=2cm of pq]   (pbi) {Power BI\\Service};
+
+  \draw[arr] (jira) -- node[above, font=\tiny]{connecteur} (pq);
+  \draw[arr] (pq)   -- (pbi);
+\end{tikzpicture}
+\end{center}
+
+\vspace{0.2cm}
+
+\subsection{Avantages et inconvénients}
+
+\begin{orangebox}
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+  \item[\textcolor{greenborder}{+}] \textbf{Pas d'infrastructure}~: aucun serveur
+        ni base de données à gérer.
+  \item[\textcolor{greenborder}{+}] \textbf{Outil unique}~: toute la chaîne tient
+        dans Power BI.
+  \item[\textcolor{redborder}{--}] \textbf{Volume de données incompatible}~: le
+        projet IRPAUTO contient plus de 55\,000 tickets. Power Query atteint ses
+        limites au-delà de 10\,000--15\,000 lignes en mode Direct Query, entraînant
+        des timeouts et des lenteurs.
+  \item[\textcolor{redborder}{--}] \textbf{Logique métier non faisable}~: le matching
+        flou des noms, le calcul du burndown avec exclusions, l'affectation des squads
+        — toute cette logique est triviale en Python mais quasi impossible à maintenir
+        en DAX/M.
+  \item[\textcolor{redborder}{--}] \textbf{Coût}~: les connecteurs Jira tiers sont
+        payants (\$10--50/mois). Power BI Premium est requis pour certaines
+        fonctionnalités avancées.
+  \item[\textcolor{redborder}{--}] \textbf{Non maintenable}~: le code M est difficile
+        à lire, à déboguer et à versionner.
+  \item[\textcolor{redborder}{--}] \textbf{Données exposées}~: les données transitent
+        directement vers les serveurs Microsoft sans contrôle intermédiaire.
+\end{itemize}
+\end{orangebox}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Architecture 3 — SharePoint comme base de données}
+
+\subsection{Description}
+
+Microsoft SharePoint, déjà licencié par DXC, propose des \emph{Listes} qui peuvent
+servir de stockage tabulaire. L'idée était d'y écrire les données transformées depuis
+Python et de connecter Power BI aux listes SharePoint.
+
+\subsection{Pourquoi cette architecture a été écartée}
+
+\begin{redbox}
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+  \item \textbf{Limite de 5\,000 lignes}~: SharePoint Lists impose un seuil de vue
+        à 5\,000 éléments. Au-delà, les requêtes échouent ou deviennent extrêmement
+        lentes. Incompatible avec 55\,000 tickets.
+  \item \textbf{Pas un vrai SGBD}~: SharePoint n'est pas une base de données
+        relationnelle. Il ne supporte pas SQL, les types de données sont peu stricts
+        et les écritures concurrentes peuvent corrompre les données.
+  \item \textbf{Connexion Power BI lente}~: la connexion Power BI -- SharePoint
+        passe par une API REST, bien plus lente qu'une connexion MySQL directe.
+  \item \textbf{Écriture Python complexe}~: écrire dans SharePoint depuis Python
+        nécessite des appels API Microsoft Graph avec une authentification OAuth
+        complexe, contre une simple ligne \texttt{pandas.to\_sql()} pour MySQL.
+\end{itemize}
+\end{redbox}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Architecture Retenue — MySQL local via Docker}
+
+\subsection{Description}
+
+L'architecture finale retenue repose sur un conteneur \textbf{Docker} hébergeant
+une instance \textbf{MySQL 8.0} sur un poste de travail dédié au sein du réseau
+DXC. Power BI Desktop et Power BI Service se connectent à cette base via un
+\textbf{On-premises Data Gateway} installé sur le même poste.
+
+\vspace{0.3cm}
+
+\begin{purplebox}
+\textbf{Principe fondamental~:} aucune donnée ne quitte le réseau interne de
+DXC Technology. Le pipeline complet — collecte, transformation, stockage,
+visualisation — est maîtrisé de bout en bout par l'équipe.
+\end{purplebox}
+
+\vspace{0.4cm}
+
+\subsection{Schéma d'architecture}
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=1.0cm and 1.4cm,
+  box/.style={rectangle, rounded corners=4pt, draw=dxcpurple, fill=blockbg,
+              minimum width=3.0cm, minimum height=0.9cm, align=center, font=\small},
+  intbox/.style={rectangle, rounded corners=4pt, draw=greenborder, fill=greenbg,
+                 minimum width=3.0cm, minimum height=0.9cm, align=center, font=\small},
+  cloudbox/.style={rectangle, rounded corners=4pt, draw=orangeborder, fill=orangebg,
+                   minimum width=3.0cm, minimum height=0.9cm, align=center, font=\small},
+  arr/.style={-{Stealth[length=5pt]}, thick, color=dxcpurple},
+  garr/.style={-{Stealth[length=5pt]}, thick, color=greenborder, dashed}
+]
+  % Jira
+  \node[box] (jira) {Jira REST API\\(Atlassian cloud)};
+
+  % Python ETL
+  \node[intbox, below=of jira] (etl) {Python ETL\\(collecte + calculs)};
+
+  % Docker MySQL
+  \node[intbox, right=2.2cm of etl] (mysql) {MySQL 8.0\\(Docker container)};
+
+  % Streamlit
+  \node[intbox, below=of etl] (streamlit) {Streamlit\\(tableau de bord)};
+
+  % Gateway
+  \node[intbox, below=of mysql] (gateway) {On-premises\\Data Gateway};
+
+  % PowerBI Desktop
+  \node[box, right=2.2cm of mysql] (pbd) {Power BI\\Desktop};
+
+  % PowerBI Service
+  \node[cloudbox, below=of pbd] (pbs) {Power BI\\Service (cloud)};
+
+  % Arrows
+  \draw[arr] (jira)     -- node[left, font=\tiny]{API REST} (etl);
+  \draw[arr] (etl)      -- node[above, font=\tiny]{to\_sql()} (mysql);
+  \draw[arr] (etl)      -- (streamlit);
+  \draw[arr] (mysql)    -- node[right, font=\tiny]{localhost} (gateway);
+  \draw[arr] (mysql)    -- node[above, font=\tiny]{connexion directe} (pbd);
+  \draw[garr] (gateway) -- node[right, font=\tiny]{tunnel sécurisé} (pbs);
+
+  % Network boundary
+  \begin{pgfonlayer}{background}
+    \node[draw=greenborder, dashed, rounded corners=6pt, fill=greenbg, fill opacity=0.1,
+          fit=(etl)(mysql)(streamlit)(gateway),
+          label={[font=\small\color{greenborder}]above:Réseau interne DXC}] {};
+  \end{pgfonlayer}
+
+\end{tikzpicture}
+\end{center}
+
+\vspace{0.4cm}
+
+\subsection{Composants}
+
+\begin{enumerate}[leftmargin=2em, itemsep=6pt]
+
+  \item \textbf{Jira REST API}~: source de données officielle. Le pipeline
+        Python se connecte via un token API personnel et récupère les tickets
+        par pagination incrémentale. Seul le poste interne initie les requêtes
+        sortantes.
+
+  \item \textbf{Python ETL}~: collecte les données, applique toute la logique
+        métier (burndown, matching des noms, calcul de l'engagement, affectation
+        des squads) et alimente la base MySQL. Entièrement versionné sous Git.
+
+  \item \textbf{MySQL 8.0 en conteneur Docker}~: base de données relationnelle
+        légère, conteneurisée pour la reproductibilité. Un volume Docker persiste
+        les données indépendamment du cycle de vie du conteneur. La directive
+        \texttt{restart: always} assure le redémarrage automatique.
+
+  \item \textbf{Streamlit}~: tableau de bord web interne accessible depuis le
+        réseau local, permettant aux membres de l'équipe de consulter les données
+        en temps quasi-réel sans accès à Power BI.
+
+  \item \textbf{On-premises Data Gateway}~: passerelle Microsoft installée sur
+        le poste hébergeant Docker. Elle crée un tunnel chiffré entre Power BI
+        Service et la base MySQL locale, sans exposer de port public.
+
+  \item \textbf{Power BI}~: couche de visualisation finale. Power BI Desktop
+        se connecte directement en local~; Power BI Service se rafraîchit via
+        le Gateway pour les rapports partagés.
+
+\end{enumerate}
+
+\vspace{0.3cm}
+
+\subsection{Justification du choix}
+
+\begin{greenbox}
+\begin{itemize}[leftmargin=1.5em, itemsep=4pt]
+  \item \textbf{Sécurité et conformité}~: les données ne quittent jamais le
+        réseau DXC. Aucun prestataire cloud tiers ne stocke d'informations
+        sensibles (noms d'employés, références clients, contenus de tickets).
+        Conformité RGPD assurée par conception.
+  \item \textbf{Coût nul}~: Docker, MySQL et le Gateway Microsoft sont
+        entièrement gratuits. Aucun abonnement externe requis.
+  \item \textbf{Performance}~: MySQL gère sans difficulté les 55\,000+ tickets
+        actuels et peut absorber plusieurs années de données supplémentaires
+        (estimation~: moins de 500 Mo pour 5 ans d'historique).
+  \item \textbf{Reproductibilité}~: un simple \texttt{docker-compose up}
+        reconstruit l'environnement complet sur n'importe quel poste DXC.
+  \item \textbf{Évolutivité}~: si le volume de données croît significativement,
+        le conteneur peut être migré vers un serveur dédié ou une VM interne
+        sans modifier une seule ligne de code applicatif.
+  \item \textbf{Maintenabilité}~: le code Python est versionné sous Git,
+        testable, lisible par tout développeur. La logique métier n'est pas
+        enfouie dans des formules DAX ou des requêtes M opaques.
+\end{itemize}
+\end{greenbox}
+
+\vspace{0.4cm}
+
+\subsection{Tableau comparatif récapitulatif}
+
+\begin{longtable}{>{\small\bfseries}p{3.5cm}
+                  >{\small\centering}p{2.5cm}
+                  >{\small\centering}p{2.5cm}
+                  >{\small\centering}p{2.5cm}
+                  >{\small\centering\arraybackslash}p{2.5cm}}
+  \toprule
+  \textbf{Critère} &
+  \textbf{Aiven (cloud)} &
+  \textbf{Power BI natif} &
+  \textbf{SharePoint} &
+  \textbf{Docker local} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  Sécurité données   & \textcolor{orangeborder}{Moyenne}  & \textcolor{orangeborder}{Moyenne}  & \textcolor{greenborder}{Bonne}    & \textcolor{greenborder}{\textbf{Excellente}} \\[3pt]
+  Conformité RGPD    & \textcolor{redborder}{À valider}   & \textcolor{redborder}{À valider}   & \textcolor{greenborder}{Bonne}    & \textcolor{greenborder}{\textbf{Native}} \\[3pt]
+  Coût               & \textcolor{greenborder}{Gratuit*}  & \textcolor{redborder}{Payant}      & \textcolor{greenborder}{Inclus}   & \textcolor{greenborder}{\textbf{Gratuit}} \\[3pt]
+  Performance        & \textcolor{greenborder}{Bonne}     & \textcolor{redborder}{Limitée}     & \textcolor{redborder}{Mauvaise}   & \textcolor{greenborder}{\textbf{Bonne}} \\[3pt]
+  Volume de données  & \textcolor{greenborder}{Illimité}  & \textcolor{redborder}{< 15k lignes}& \textcolor{redborder}{< 5k lignes}& \textcolor{greenborder}{\textbf{Illimité}} \\[3pt]
+  Logique métier     & \textcolor{greenborder}{Python}    & \textcolor{redborder}{DAX/M}       & \textcolor{redborder}{Limitée}    & \textcolor{greenborder}{\textbf{Python}} \\[3pt]
+  Maintenabilité     & \textcolor{greenborder}{Bonne}     & \textcolor{redborder}{Difficile}   & \textcolor{redborder}{Difficile}  & \textcolor{greenborder}{\textbf{Excellente}} \\[3pt]
+  Disponibilité PBI  & \textcolor{greenborder}{24/7}      & \textcolor{greenborder}{24/7}      & \textcolor{greenborder}{24/7}     & \textcolor{orangeborder}{Poste allumé} \\[3pt]
+  Dépendance externe & \textcolor{redborder}{Oui}         & \textcolor{redborder}{Oui}         & \textcolor{orangeborder}{Partielle}& \textcolor{greenborder}{\textbf{Aucune}} \\[3pt]
+
+\end{longtable}
+
+{\small * Tier gratuit limité, payant au-delà}
+
+\vspace{0.5cm}
+\noindent{\color{dxcpurple}\rule{\linewidth}{0.8pt}}
+\begin{center}
+  \small\color{greytext}
+  Document interne — DXC Technology · Projet IRPAUTO
+\end{center}
+
+\end{document}

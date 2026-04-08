@@ -1,0 +1,308 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{mdframed}
+
+% ── Couleurs ──────────────────────────────────────────────────────────────────
+\definecolor{dxcpurple}{RGB}{102, 0, 153}
+\definecolor{blockbg}{RGB}{248, 242, 255}
+\definecolor{greenbg}{RGB}{232, 245, 233}
+\definecolor{orangebg}{RGB}{255, 243, 224}
+\definecolor{greytext}{RGB}{90, 90, 90}
+
+% ── En-tête / pied de page ────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{dxcpurple}{\textbf{DXC Technology}}}
+\fancyhead[R]{\textcolor{dxcpurple}{Cahier des Charges — Tableau de Bord Sprint}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{%
+  \hbox to\headwidth{\color{dxcpurple}\leaders\hrule height \headrulewidth\hfill}}
+
+% ── Titres ────────────────────────────────────────────────────────────────────
+\titleformat{\section}{\large\bfseries\color{dxcpurple}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{dxcpurple}}{}{0em}{}
+
+% ── Environnements encadrés ───────────────────────────────────────────────────
+\newmdenv[
+  backgroundcolor=blockbg,
+  linecolor=dxcpurple,
+  linewidth=1.2pt,
+  innerleftmargin=12pt, innerrightmargin=12pt,
+  innertopmargin=10pt, innerbottommargin=10pt,
+  roundcorner=4pt
+]{purplebox}
+
+\newmdenv[
+  backgroundcolor=greenbg,
+  linecolor=green!60!black,
+  linewidth=1pt,
+  innerleftmargin=12pt, innerrightmargin=12pt,
+  innertopmargin=8pt, innerbottommargin=8pt,
+  roundcorner=4pt
+]{greenbox}
+
+\newmdenv[
+  backgroundcolor=orangebg,
+  linecolor=orange!80!black,
+  linewidth=1pt,
+  innerleftmargin=12pt, innerrightmargin=12pt,
+  innertopmargin=8pt, innerbottommargin=8pt,
+  roundcorner=4pt
+]{orangebox}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Page de titre ─────────────────────────────────────────────────────────────
+\begin{center}
+  {\color{dxcpurple}\rule{\linewidth}{1.5pt}}\\[0.5cm]
+  {\LARGE\bfseries\color{dxcpurple}
+    Tableau de Bord de Pilotage de Sprint}\\[0.25cm]
+  {\large IRPAUTO · DXC GraphTalk Service Desk}\\[0.15cm]
+  {\normalsize\color{greytext}
+    Cahier des charges et spécifications fonctionnelles}\\[0.4cm]
+  {\color{dxcpurple}\rule{\linewidth}{1.5pt}}
+\end{center}
+
+\vspace{0.6cm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Contexte Métier}
+
+DXC Technology est un prestataire mondial de services informatiques qui accompagne ses
+clients dans la modernisation et la maintenance de leurs systèmes d'information. Dans
+le cadre du projet \textbf{IRPAUTO}, l'équipe prend en charge le maintien en condition
+opérationnelle du progiciel \textbf{GraphTalk} pour le compte de plusieurs compagnies
+d'assurance françaises, sur des domaines métier variés~: prévoyance, santé, comptabilité
+et édition documentaire.
+
+\vspace{0.2cm}
+
+Le travail est cadencé en \textbf{sprints Agile} d'environ quatre semaines. À chaque
+sprint, l'équipe s'engage à livrer un ensemble de tickets — corrections de bugs,
+évolutions fonctionnelles, incidents de production — préalablement sélectionnés et
+estimés. Cet engagement constitue le \textbf{périmètre du sprint}, et sa bonne
+exécution est un indicateur clé de la relation de confiance avec le client.
+
+\vspace{0.4cm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Problématique}
+
+\begin{orangebox}
+Le suivi de l'avancement du sprint reposait jusqu'alors sur des
+\textbf{processus manuels} dont les limites devenaient de plus en plus
+contraignantes~:
+
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+  \item \textbf{Absence de vision en temps réel}~: les données n'étaient
+        disponibles qu'à travers des fichiers produits ponctuellement, rapidement
+        obsolètes dès qu'un ticket changeait d'état.
+  \item \textbf{Aucune vue consolidée}~: il n'existait pas de tableau de bord
+        centralisé permettant de visualiser l'avancement global, ni par équipe
+        ni par individu.
+  \item \textbf{Pas de suivi de trajectoire}~: il était impossible de savoir,
+        à un instant donné, si l'équipe était en avance ou en retard sur le
+        rythme nécessaire pour honorer ses engagements à la fin du sprint.
+  \item \textbf{Reporting chronophage}~: la préparation des comptes rendus
+        hebdomadaires nécessitait des consolidations manuelles longues et
+        sujettes aux erreurs.
+  \item \textbf{Manque de transparence}~: les parties prenantes (management,
+        client) ne disposaient pas d'un accès simple et actualisé à l'état
+        réel du sprint.
+\end{itemize}
+\end{orangebox}
+
+\vspace{0.4cm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Objectifs du Projet}
+
+\begin{purplebox}
+\textbf{Objectif général~:} concevoir et déployer un outil de pilotage qui
+fournit, à tout moment, une vision claire, fiable et consolidée de l'avancement
+du sprint — sans intervention manuelle — aussi bien pour l'équipe interne que
+pour les présentations client.
+\end{purplebox}
+
+\vspace{0.4cm}
+
+\subsection{Objectifs fonctionnels}
+
+\begin{enumerate}[leftmargin=2em, itemsep=6pt]
+
+  \item \textbf{Automatiser la collecte des données.}\\
+        Supprimer la dépendance aux exports manuels. Les données doivent être
+        récupérées automatiquement depuis la source officielle de gestion des
+        tickets, de façon périodique ou à la demande.
+
+  \item \textbf{Fournir une vue d'avancement journalière du sprint (burndown).}\\
+        L'outil doit permettre de visualiser, pour chaque jour du sprint~:
+        le volume de travail restant, le volume livré, et la trajectoire
+        théorique idéale. Cette courbe permet de détecter tout écart par rapport
+        aux engagements pris.
+
+  \item \textbf{Mesurer le taux d'engagement par individu et par équipe.}\\
+        Pour chaque ticket du périmètre du sprint, le système doit déterminer
+        s'il est considéré comme \emph{livré} ou \emph{non livré} sur la base
+        de son statut courant. Cette classification alimente des indicateurs
+        d'engagement (tickets livrés, Story Points livrés, taux d'engagement en
+        pourcentage) à la maille de chaque collaborateur et de chaque squad.
+
+  \item \textbf{Suivre l'évolution du backlog des incidents de production.}\\
+        En parallèle du sprint, l'outil doit permettre de surveiller le volume
+        global d'incidents ouverts, d'en observer la tendance quotidienne
+        (entrées, sorties, solde net) et de le comparer à une cible de réduction.
+
+  \item \textbf{Produire des rapports visuels prêts pour les présentations client.}\\
+        Les données calculées doivent être disponibles dans un outil de
+        visualisation externe (type PowerBI) permettant de générer des rapports
+        graphiques professionnels sans manipulation supplémentaire.
+
+\end{enumerate}
+
+\vspace{0.4cm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Spécifications Fonctionnelles}
+
+\subsection{Module 1 — Burndown du Sprint}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+  \item Affichage jour par jour de l'avancement du sprint sur toute sa durée.
+  \item Indicateurs calculés~: points restants, points résolus, trajectoire idéale,
+        pourcentage de complétion.
+  \item Même logique disponible en nombre de tickets (en plus des Story Points).
+  \item Prise en charge d'une logique de date de complétion robuste~: la date
+        retenue pour un ticket est la première date disponible parmi la date de
+        qualification, la date de résolution et la date de clôture.
+  \item Possibilité de configurer manuellement les dates de début et de fin de sprint.
+\end{itemize}
+
+\vspace{0.2cm}
+
+\subsection{Module 2 — Engagement de l'Équipe}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+  \item Périmètre restreint aux tickets officiellement engagés dans le sprint
+        (scope validé lors de la réunion de planification).
+  \item Classification de chaque ticket selon son statut courant~:
+  \begin{itemize}
+    \item \textbf{Livré}~: statuts indiquant qu'un ticket a atteint une étape
+          de validation ou de clôture.
+    \item \textbf{Non livré}~: statuts indiquant un travail encore en cours.
+  \end{itemize}
+  \item Calcul par collaborateur~: tickets engagés, SP engagés, tickets livrés,
+        SP livrés, tickets non livrés, SP non livrés, taux d'engagement.
+  \item Agrégation identique par squad.
+  \item Formule du taux d'engagement~:
+        $\text{Commitment} = \dfrac{\text{SP livrés}}{\text{SP engagés}} \times 100$
+  \item Vue drill-down~: par squad, puis par individu, avec la liste détaillée de
+        chaque ticket et son statut courant.
+\end{itemize}
+
+\vspace{0.2cm}
+
+\subsection{Module 3 — Backlog des Incidents}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+  \item Suivi de l'évolution quotidienne du nombre d'incidents de production ouverts.
+  \item Indicateurs~: incidents ouverts, incidents fermés, solde net journalier,
+        courbe de tendance, cible de réduction.
+  \item Visualisation de l'écart entre la trajectoire réelle et la trajectoire cible.
+\end{itemize}
+
+\vspace{0.2cm}
+
+\subsection{Module 4 — Reporting Externe}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+  \item Les données calculées (burndown, engagement par squad, engagement par
+        individu, liste de tickets classifiés) doivent être exportées dans un
+        format structuré accessible à un outil de visualisation externe.
+  \item Les rapports doivent se mettre à jour sans intervention manuelle
+        (simple rafraîchissement).
+  \item Les visuels cibles sont~: courbes de burndown, graphiques d'engagement
+        empilés, tableaux de synthèse, matrices squad / individu, drill-through
+        par ticket.
+\end{itemize}
+
+\vspace{0.4cm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Exigences Non Fonctionnelles}
+
+\begin{longtable}{>{\bfseries\small\color{dxcpurple}}p{4cm}
+                  >{\small}p{10cm}}
+  \toprule
+  \normalfont\textbf{\color{dxcpurple}Critère} &
+  \normalfont\textbf{\color{dxcpurple}Exigence} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  Actualisation &
+  Les données doivent pouvoir être mises à jour à la demande ou de façon
+  planifiée, sans intervention manuelle sur les fichiers sources. \\[4pt]
+
+  Fiabilité &
+  Source unique de vérité~; les données affichées doivent être cohérentes entre
+  tous les modules et avec la réalité du gestionnaire de tickets. \\[4pt]
+
+  Accessibilité &
+  Le tableau de bord interne doit être accessible depuis un navigateur web, sans
+  installation logicielle pour les utilisateurs. \\[4pt]
+
+  Maintenabilité &
+  L'ajout d'un nouveau sprint ou d'un nouveau périmètre ne doit pas nécessiter
+  de modifications structurelles de l'outil. \\[4pt]
+
+  Confidentialité &
+  Les données (noms, tickets, capacités) sont à usage interne~; l'accès à
+  l'application et à la base de données doit être protégé. \\
+
+\end{longtable}
+
+\vspace{0.4cm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Bénéfices Attendus}
+
+\begin{greenbox}
+\begin{itemize}[leftmargin=1.5em, itemsep=4pt]
+  \item \textbf{Gain de temps}~: élimination des consolidations manuelles~;
+        les indicateurs sont disponibles en temps quasi-réel.
+  \item \textbf{Meilleure prise de décision}~: la visibilité sur la trajectoire
+        du sprint permet d'anticiper les risques et d'ajuster les priorités avant
+        qu'il ne soit trop tard.
+  \item \textbf{Transparence envers le client}~: un reporting visuel clair et
+        actualisé renforce la confiance et facilite les réunions de suivi.
+  \item \textbf{Responsabilisation de l'équipe}~: chaque collaborateur peut
+        consulter son propre taux d'engagement et l'état de ses tickets en
+        autonomie.
+  \item \textbf{Réplicabilité}~: la structure de l'outil est conçue pour
+        s'appliquer aux sprints futurs sans refonte.
+\end{itemize}
+\end{greenbox}
+
+\vspace{0.5cm}
+\noindent{\color{dxcpurple}\rule{\linewidth}{0.8pt}}
+\begin{center}
+  \small\color{greytext}
+  Document interne — DXC Technology · Projet IRPAUTO
+\end{center}
+
+\end{document}

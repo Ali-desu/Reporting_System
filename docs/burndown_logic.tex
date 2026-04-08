@@ -1,0 +1,77 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+
+\title{\textbf{R25 Sprint Burndown --- Logic}}
+\author{DXC Service Desk Analytics}
+\date{Sprint R25 \quad|\quad 08 March -- 04 April 2026}
+
+\begin{document}
+\maketitle
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Scope}
+
+The burndown only looks at the \textbf{42 tickets} committed in the
+Release Lifecycle file (sheet \emph{Scope UPDATE}). No other tickets are included.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Story Points per Ticket}
+
+Story points are read from the \textbf{Jira extract} first.
+If a ticket has no value there, the \textbf{planning file} value is used instead.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{When is a Ticket Considered Done?}
+
+Three date columns are checked in order, taking the first one that is filled:
+
+\begin{enumerate}
+  \item \texttt{qualification\_date} --- ticket passed the QA gate
+  \item \texttt{resolved} --- Jira resolution date
+  \item \texttt{closure\_date} --- formally closed in the workflow
+\end{enumerate}
+
+That date is then accepted or rejected based on this rule:
+
+\begin{itemize}
+  \item Date is \textbf{within the sprint} (08 Mar -- 04 Apr) $\rightarrow$ accepted.
+  \item Date is \textbf{outside the sprint} $\rightarrow$ only accepted if the
+        ticket status is \emph{Closed}, \emph{Cancelled}, \emph{Done}, or \emph{Resolved}.
+  \item Anything else $\rightarrow$ ignored.
+\end{itemize}
+
+\textbf{Why?} Some tickets have a \texttt{qualification\_date} left over
+from a previous sprint, even though they were re-opened and are still in
+progress. Without this check, those tickets would wrongly count as already
+delivered from day one.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{What is Computed Each Day}
+
+For every calendar day in the sprint, the system counts all tickets whose
+validated completion date falls on or before that day (by end of day).
+From that count the following columns are derived:
+
+\medskip
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Column} & \textbf{How it is calculated} \\
+\midrule
+\texttt{resolved\_pts}           & Sum of story points of completed tickets \\
+\texttt{remaining\_pts}          & Total SP minus resolved SP \\
+\texttt{ideal\_pts}              & Total SP spread evenly across sprint days (linear decrease to 0) \\
+\texttt{resolved\_tickets}       & Number of completed tickets \\
+\texttt{remaining\_tickets}      & 42 minus resolved tickets \\
+\texttt{ideal\_tickets}          & 42 spread evenly across sprint days (linear decrease to 0) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+The \textbf{ideal} columns represent what perfect, steady progress would look
+like --- starting at the full scope on day one and reaching zero on the last day.
+
+\end{document}

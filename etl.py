@@ -794,11 +794,7 @@ def materialise_r25_burndown(engine, sprint_start=None, sprint_end=None) -> int:
         .fillna(0)
     )
 
-    # Raw completion date: first non-null of qualification_date → resolved → closure_date
-    merged["_resolved_at_raw"] = pd.NaT
-    for col in ["qualification_date", "resolved", "closure_date"]:
-        if col in merged.columns:
-            merged["_resolved_at_raw"] = merged["_resolved_at_raw"].fillna(merged[col])
+    _date_cols_e = [c for c in ["qualification_date", "resolved", "closure_date"] if c in merged.columns]
 
     # Sprint window — from meta table or arguments
     if sprint_start is None or sprint_end is None:
@@ -808,9 +804,7 @@ def materialise_r25_burndown(engine, sprint_start=None, sprint_end=None) -> int:
         sprint_start = pd.Timestamp(meta.iloc[0]["sprint_start"]).date()
         sprint_end   = pd.Timestamp(meta.iloc[0]["sprint_end"]).date()
 
-    # Status-based delivery: ticket is "done" iff status ∈ DELIVERED_STATUSES.
-    # Dates place the ticket on the timeline; delivered tickets with no date
-    # are placed on today (capped at sprint_end).
+    # A ticket counts only if: status ∈ DELIVERED_STATUSES AND earliest date within sprint.
     _DELIVERED_STATUSES = {
         "closed", "qualification test", "ready for staging",
         "ready for exceptions", "ready for qa", "ready for sprint",
@@ -822,10 +816,37 @@ def materialise_r25_burndown(engine, sprint_start=None, sprint_end=None) -> int:
     _is_done = merged["status"].str.lower().str.strip().isin(_DELIVERED_STATUSES) \
                if "status" in merged.columns \
                else pd.Series(False, index=merged.index)
-    _raw = merged["_resolved_at_raw"]
-    _today_ts = min(pd.Timestamp(_dt.date.today()), _sp_e)
-    _effective_date = _raw.where(_raw.notna(), _today_ts)
-    merged["_resolved_at"] = _effective_date.where(_is_done, pd.NaT)
+    # Per date column: keep only if within sprint
+    for _dc in _date_cols_e:
+        _ts = pd.to_datetime(merged[_dc], errors="coerce")
+        merged[_dc + "_ts"]  = _ts          # raw parsed
+        merged[_dc + "_in"]  = _ts.where(_ts.notna() & (_ts >= _sp_s) & (_ts <= _sp_e))
+
+    # Earliest date within sprint across all three columns
+    merged["_resolved_at"] = pd.concat(
+        [merged[_dc + "_in"] for _dc in _date_cols_e], axis=1
+    ).min(axis=1)
+
+    # Earliest raw date (any, inside or outside sprint) — used to classify exclusions
+    merged["_any_date"] = pd.concat(
+        [merged[_dc + "_ts"] for _dc in _date_cols_e], axis=1
+    ).min(axis=1)
+
+    # Final gate: delivered status AND date within sprint → only these count in burndown
+    merged["_resolved_at"] = merged["_resolved_at"].where(_is_done, pd.NaT)
+
+    # NO_DATE tickets: delivered but all dates null → place at last day of sprint
+    _no_date_mask = _is_done & merged["_resolved_at"].isna() & merged["_any_date"].isna()
+    merged.loc[_no_date_mask, "_resolved_at"] = _sp_e
+
+    # ── Build exclusion table (DATE_OUTSIDE_SPRINT only) ──────────────────────
+    _excluded = merged[_is_done & merged["_resolved_at"].isna()].copy()
+    _excluded["exclusion_reason"] = "DATE_OUTSIDE_SPRINT"
+    _excl_out = _excluded[
+        ["key"] + [c for c in ["status", "story_points", "assignee"] if c in _excluded.columns] +
+        [_dc + "_ts" for _dc in _date_cols_e] + ["exclusion_reason"]
+    ].rename(columns={_dc + "_ts": _dc for _dc in _date_cols_e}).copy()
+    _excl_out.columns = [c.replace("_ts", "") for c in _excl_out.columns]
 
     days         = pd.date_range(sprint_start, sprint_end, freq="D")
     total_pts    = float(merged["_pts"].sum())
@@ -855,11 +876,16 @@ def materialise_r25_burndown(engine, sprint_start=None, sprint_end=None) -> int:
 
     df_out = pd.DataFrame(rows)
 
+    # Tag committed rows and store as scope_type="Committed"
+    df_out["scope_type"] = "Committed"
+
+    # ── Write unified burndown table (append Committed rows; Full Team added from app) ──
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS r25_burndown"))
         conn.execute(text("""
             CREATE TABLE r25_burndown (
-                `date`                DATE NOT NULL,
+                `date`                DATE        NOT NULL,
+                scope_type            VARCHAR(20) NOT NULL,
                 total_pts             FLOAT,
                 resolved_pts          FLOAT,
                 remaining_pts         FLOAT,
@@ -870,12 +896,49 @@ def materialise_r25_burndown(engine, sprint_start=None, sprint_end=None) -> int:
                 remaining_tickets     INT,
                 ideal_tickets         FLOAT,
                 pct_complete_tickets  FLOAT,
-                PRIMARY KEY (`date`)
+                PRIMARY KEY (`date`, scope_type)
+            ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+        """))
+        conn.execute(text("DROP TABLE IF EXISTS r25_sprint_tickets"))
+        conn.execute(text("""
+            CREATE TABLE r25_sprint_tickets (
+                `key`               VARCHAR(30)  NOT NULL,
+                summary             TEXT,
+                assignee            VARCHAR(120),
+                squad               VARCHAR(120),
+                status              VARCHAR(80),
+                story_points        FLOAT,
+                in_scope            TINYINT(1),
+                is_delivered        TINYINT(1),
+                completed_at        DATETIME,
+                qualification_date  DATETIME,
+                resolved            DATETIME,
+                closure_date        DATETIME,
+                PRIMARY KEY (`key`)
             ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
         """))
     df_out.to_sql("r25_burndown", con=engine, if_exists="append", index=False)
-    print(f"[ETL] r25_burndown: {len(df_out)} rows ({sprint_start} -> {sprint_end})")
+
+    print(f"[ETL] r25_burndown (Committed): {len(df_out)} rows ({sprint_start} -> {sprint_end})")
+    print(f"[ETL] burndown excluded (logged in r25_team_tickets.exclusion_reason): {len(_excl_out)} tickets "
+          f"({(_excl_out['exclusion_reason']=='NO_DATE').sum()} no date, "
+          f"{(_excl_out['exclusion_reason']=='DATE_OUTSIDE_SPRINT').sum()} outside sprint)")
     return len(df_out)
+
+
+def append_r25_full_burndown(engine, burn_df, tickets_df) -> dict:
+    """
+    Append 'Full Team' scope_type rows to r25_burndown and write r25_sprint_tickets.
+    Call materialise_r25_burndown first (it creates the tables and writes Committed rows).
+
+    burn_df    : daily burndown rows — must already have scope_type='Full Team'
+    tickets_df : one row per ticket in the full pool
+    """
+    burn_df.to_sql("r25_burndown",      con=engine, if_exists="append", index=False)
+    tickets_df.to_sql("r25_sprint_tickets", con=engine, if_exists="append", index=False)
+    print(f"[ETL] r25_burndown (Full Team): {len(burn_df)} rows")
+    print(f"[ETL] r25_sprint_tickets: {len(tickets_df)} rows")
+    return {"burndown_rows": len(burn_df), "ticket_rows": len(tickets_df)}
 
 
 def materialise_backlog_burndown(engine,
@@ -1015,16 +1078,16 @@ def materialise_r25_team_commitment(
         conn.execute(text("DROP TABLE IF EXISTS r25_team_assignee"))
         conn.execute(text("""
             CREATE TABLE r25_team_assignee (
-                display_name          VARCHAR(120) NOT NULL,
-                squad                 VARCHAR(120),
-                engaged_tickets       INT,
-                engaged_sp            FLOAT,
-                delivered_tickets     INT,
-                delivered_sp          FLOAT,
+                display_name         VARCHAR(120) NOT NULL,
+                squad                VARCHAR(120),
+                engaged_tickets      INT,
+                engaged_sp           FLOAT,
+                delivered_tickets    INT,
+                delivered_sp         FLOAT,
                 not_delivered_tickets INT,
-                not_delivered_sp      FLOAT,
-                commitment_pct        FLOAT,
-                commitment_sp_pct     FLOAT,
+                not_delivered_sp     FLOAT,
+                commitment_pct       FLOAT,
+                commitment_sp_pct    FLOAT,
                 PRIMARY KEY (display_name)
             ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
         """))
@@ -1033,16 +1096,16 @@ def materialise_r25_team_commitment(
         conn.execute(text("DROP TABLE IF EXISTS r25_team_squad"))
         conn.execute(text("""
             CREATE TABLE r25_team_squad (
-                squad                 VARCHAR(120) NOT NULL,
-                members               INT,
-                engaged_tickets       INT,
-                engaged_sp            FLOAT,
-                delivered_tickets     INT,
-                delivered_sp          FLOAT,
+                squad                VARCHAR(120) NOT NULL,
+                members              INT,
+                engaged_tickets      INT,
+                engaged_sp           FLOAT,
+                delivered_tickets    INT,
+                delivered_sp         FLOAT,
                 not_delivered_tickets INT,
-                not_delivered_sp      FLOAT,
-                commitment_pct        FLOAT,
-                commitment_sp_pct     FLOAT,
+                not_delivered_sp     FLOAT,
+                commitment_pct       FLOAT,
+                commitment_sp_pct    FLOAT,
                 PRIMARY KEY (squad)
             ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
         """))
@@ -1051,17 +1114,21 @@ def materialise_r25_team_commitment(
         conn.execute(text("DROP TABLE IF EXISTS r25_team_tickets"))
         conn.execute(text("""
             CREATE TABLE r25_team_tickets (
-                `key`          VARCHAR(30)  NOT NULL,
-                summary        TEXT,
-                status         VARCHAR(80),
-                assignee       VARCHAR(120),
-                display_name   VARCHAR(120),
-                squad          VARCHAR(120),
-                story_points   FLOAT,
-                issue_type     VARCHAR(80),
-                priority       VARCHAR(40),
-                is_delivered   TINYINT(1),
-                is_not_delivered TINYINT(1),
+                `key`               VARCHAR(30)  NOT NULL,
+                summary             TEXT,
+                status              VARCHAR(80),
+                assignee            VARCHAR(120),
+                display_name        VARCHAR(120),
+                squad               VARCHAR(120),
+                story_points        FLOAT,
+                issue_type          VARCHAR(80),
+                priority            VARCHAR(40),
+                is_delivered        TINYINT(1),
+                is_not_delivered    TINYINT(1),
+                qualification_date  DATETIME,
+                resolved            DATETIME,
+                closure_date        DATETIME,
+                exclusion_reason    VARCHAR(30),
                 PRIMARY KEY (`key`)
             ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
         """))
